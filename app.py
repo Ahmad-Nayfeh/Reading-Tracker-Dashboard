@@ -12,7 +12,6 @@ st.set_page_config(
 )
 
 # --- Initial Data Load & State Check ---
-# (This part remains unchanged)
 all_data = db.get_all_data_for_stats()
 if all_data:
     members_df = pd.DataFrame(all_data.get('members', []))
@@ -34,7 +33,6 @@ else:
 st.title("📚 لوحة تحكم تحدي القرّاء")
 
 # State 1 & 2: Setup Wizard and Script Generation
-# (This part remains unchanged)
 if not setup_complete:
     st.warning("👋 مرحباً بك! لنقم بإعداد تحدي القراءة الخاص بك.")
     if members_df.empty:
@@ -127,17 +125,19 @@ else:
         period_logs_df = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] <= end_date)]
         period_achievements_df = achievements_df[achievements_df['period_id'] == selected_challenge_id]
         
+        days_total = (end_date - start_date).days + 1
+        days_passed = (datetime.date.today() - start_date).days + 1
+        
         with st.container(border=True):
             st.subheader(f"📖 التحدي الحالي: {selected_period['title']}")
             st.caption(f"تأليف: {selected_period['author']} | مدة التحدي: من {selected_period['start_date']} إلى {selected_period['end_date']}")
-            days_total = (end_date - start_date).days + 1
-            days_passed = (datetime.date.today() - start_date).days + 1
             progress = min(max(days_passed / days_total, 0), 1)
             st.progress(progress, text=f"انقضى {days_passed if days_passed >= 0 else 0} يوم من أصل {days_total} يوم")
         
         st.divider()
         
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط", "🧐 تحليل فردي"])
+        # REMOVED THE LAST TWO TABS
+        tab1, tab2, tab3 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط"])
         
         with tab1:
             st.subheader("نظرة عامة على أداء المجموعة")
@@ -147,12 +147,14 @@ else:
             active_members_count = period_logs_df['member_id'].nunique()
             total_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
             meetings_attended_count = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].nunique()
-            
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            avg_daily_reading = (total_minutes / active_members_count / days_passed) if active_members_count > 0 and days_passed > 0 else 0
+
+            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
             kpi1.metric("إجمالي ساعات القراءة", f"{total_minutes / 60:.1f} ساعة")
             kpi2.metric("الأعضاء النشطون", f"{active_members_count} عضو")
             kpi3.metric("إجمالي الاقتباسات", f"{total_quotes} اقتباس")
             kpi4.metric("حضور جلسة النقاش", f"{meetings_attended_count} عضو")
+            kpi5.metric("متوسط القراءة اليومي للعضو", f"{avg_daily_reading:.1f} دقيقة")
             
             st.divider()
 
@@ -200,54 +202,27 @@ else:
             with col4:
                 st.subheader("تحليل مصادر النقاط")
                 settings = db.load_global_settings()
-
                 if settings:
-                    # حساب النقاط من دقائق القراءة
                     reading_points_common = (period_logs_df['common_book_minutes'].sum() // settings.get('minutes_per_point_common', 1))
                     reading_points_other = (period_logs_df['other_book_minutes'].sum() // settings.get('minutes_per_point_other', 1))
-                    
-                    # حساب النقاط من الاقتباسات
                     quote_points_common = period_logs_df['submitted_common_quote'].sum() * settings.get('quote_common_book_points', 0)
                     quote_points_other = period_logs_df['submitted_other_quote'].sum() * settings.get('quote_other_book_points', 0)
-
-                    # حساب النقاط من الإنجازات للفترة المحددة
                     finish_points_common = len(period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']) * settings.get('finish_common_book_points', 0)
                     finish_points_other = len(period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK']) * settings.get('finish_other_book_points', 0)
                     discussion_points = meetings_attended_count * settings.get('attend_discussion_points', 0)
-
-                    # جمع الفئات الرئيسية
                     total_reading_points = reading_points_common + reading_points_other
                     total_quote_points = quote_points_common + quote_points_other
                     total_finish_points = finish_points_common + finish_points_other
-                    
-                    # التحقق من وجود نقاط لعرضها
                     total_all_points = total_reading_points + total_quote_points + total_finish_points + discussion_points
-                    
                     if total_all_points > 0:
-                        # إنشاء بيانات المخطط مع التأكد من عدم وجود قيم صفرية
                         chart_data = []
-                        
-                        if total_reading_points > 0:
-                            chart_data.append({"النشاط": "نقاط القراءة", "النقاط": total_reading_points})
-                        if total_quote_points > 0:
-                            chart_data.append({"النشاط": "نقاط الاقتباسات", "النقاط": total_quote_points})
-                        if total_finish_points > 0:
-                            chart_data.append({"النشاط": "نقاط إنهاء الكتب", "النقاط": total_finish_points})
-                        if discussion_points > 0:
-                            chart_data.append({"النشاط": "نقاط النقاش", "النقاط": discussion_points})
-                        
+                        if total_reading_points > 0: chart_data.append({"النشاط": "نقاط القراءة", "النقاط": total_reading_points})
+                        if total_quote_points > 0: chart_data.append({"النشاط": "نقاط الاقتباسات", "النقاط": total_quote_points})
+                        if total_finish_points > 0: chart_data.append({"النشاط": "نقاط إنهاء الكتب", "النقاط": total_finish_points})
+                        if discussion_points > 0: chart_data.append({"النشاط": "نقاط النقاش", "النقاط": discussion_points})
                         if chart_data:
-                            # إنشاء DataFrame للمخطط
                             points_df = pd.DataFrame(chart_data)
-                            
-                            # رسم المخطط الدائري
-                            fig = px.pie(
-                                points_df, 
-                                names='النشاط', 
-                                values='النقاط',
-                                title="من أين تأتي نقاط الفريق؟",
-                                hole=0.4
-                            )
+                            fig = px.pie(points_df, names='النشاط', values='النقاط', title="من أين تأتي نقاط الفريق؟", hole=0.4)
                             fig.update_traces(textposition='inside', textinfo='percent+label')
                             st.plotly_chart(fig, use_container_width=True)
                         else:
@@ -259,9 +234,7 @@ else:
 
         with tab2:
             st.subheader("قائمة المتصدرين والإنجازات")
-            
             col1, col2 = st.columns([2, 1])
-            
             with col1:
                 st.subheader("🏆 المتصدرون حسب النقاط")
                 if not member_stats_df.empty:
@@ -273,7 +246,6 @@ else:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("لا توجد إحصائيات لعرضها. يرجى تشغيل main.py")
-            
             with col2:
                 st.subheader("🏅 أبطال الإنجازات")
                 if not period_achievements_df.empty and not member_stats_df.empty:
@@ -282,21 +254,17 @@ else:
                         fastest_finisher_id = common_finishers.sort_values('achievement_date').iloc[0]['member_id']
                         fastest_finisher_name = members_df[members_df['member_id'] == fastest_finisher_id]['name'].iloc[0]
                         st.metric("🚀 القارئ الصاروخي", fastest_finisher_name)
-                    
                     finished_books_count = member_stats_df.set_index('name')[['total_common_books_read', 'total_other_books_read']].sum(axis=1)
                     if not finished_books_count.empty:
                         king_of_books = finished_books_count.idxmax()
                         st.metric("👑 ملك الكتب", king_of_books, int(finished_books_count.max()))
-                        
                     meetings_count = member_stats_df.set_index('name')['meetings_attended']
                     if not meetings_count.empty and meetings_count.max() > 0:
                         discussion_dean = meetings_count.idxmax()
                         st.metric("⭐ عميد الحضور", discussion_dean, int(meetings_count.max()))
                 else:
                     st.info("لم يتم تسجيل أي إنجازات بعد.")
-            
             st.divider()
-            
             st.subheader("تحليل الاقتباسات حسب العضو")
             if not period_logs_df.empty:
                 quote_data = period_logs_df.groupby('member_id')[['submitted_common_quote', 'submitted_other_quote']].sum().reset_index()
@@ -307,7 +275,6 @@ else:
                     'submitted_common_quote': 'اقتباس من كتاب مشترك',
                     'submitted_other_quote': 'اقتباس من كتاب آخر'
                 })
-                
                 fig = px.bar(quote_data, x='name', y='العدد', color='نوع الاقتباس',
                              title="تحليل الاقتباسات المرسلة من كل عضو",
                              labels={'name': 'اسم العضو', 'العدد': 'عدد الاقتباسات'})
@@ -316,7 +283,6 @@ else:
                 st.info("لا توجد بيانات اقتباسات لعرضها.")
 
         with tab3:
-            # (This tab's code remains the same)
             st.subheader("تنبيهات حول نشاط الأعضاء")
             st.warning("هذه القوائم تظهر الأعضاء الذين تجاوزوا الحد المسموح به للغياب وقد يتم تطبيق خصومات عليهم.")
             col1, col2 = st.columns(2)
@@ -341,35 +307,7 @@ else:
                 else:
                     st.info("لا توجد بيانات لعرضها.")
 
-        with tab4:
-            # (This tab's code remains the same)
-            st.subheader("تحليل الأداء الفردي")
-            if not members_df.empty and not member_stats_df.empty:
-                member_list = members_df['name'].tolist()
-                selected_member_name = st.selectbox("اختر عضواً لعرض تحليله التفصيلي:", member_list)
-                if selected_member_name:
-                    selected_member_id = members_df[members_df['name'] == selected_member_name]['member_id'].iloc[0]
-                    member_stats = member_stats_df[member_stats_df['member_id'] == selected_member_id].iloc[0]
-                    member_logs = period_logs_df[period_logs_df['member_id'] == selected_member_id]
-                    with st.container(border=True):
-                        st.header(f"بطاقة أداء: {selected_member_name}")
-                        m_col1, m_col2, m_col3 = st.columns(3)
-                        m_col1.metric("إجمالي النقاط", f"{member_stats['total_points']} نقطة")
-                        total_member_minutes = member_stats['total_reading_minutes_common'] + member_stats['total_reading_minutes_other']
-                        m_col2.metric("إجمالي ساعات القراءة", f"{total_member_minutes / 60:.1f} ساعة")
-                        m_col3.metric("إجمالي الاقتباسات", f"{member_stats['total_quotes_submitted']} اقتباس")
-                        st.divider()
-                        st.subheader("نمط القراءة اليومي")
-                        if not member_logs.empty:
-                            daily_data = member_logs.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum()
-                            st.bar_chart(daily_data)
-                        else:
-                            st.info(f"لم يسجل {selected_member_name} أي قراءة في هذا التحدي بعد.")
-            else:
-                st.info("لا يوجد أعضاء لعرضهم.")
-
     elif page == "مستكشف البيانات":
-        # (This page's code remains the same)
         st.header("🔬 مستكشف البيانات")
         st.subheader("ملخص قاعدة البيانات")
         kpi1, kpi2, kpi3 = st.columns(3)
@@ -418,7 +356,6 @@ else:
             st.dataframe(periods_df.drop(columns=['period_id', 'common_book_id']), use_container_width=True, hide_index=True)
 
     elif page == "الإضافات":
-        # (This page's code remains the same)
         st.header("➕ إدارة التحديات")
         st.subheader("قائمة التحديات الحالية والسابقة")
         if not periods_df.empty:
@@ -446,7 +383,6 @@ else:
                             st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!"); st.rerun()
 
     elif page == "الإعدادات":
-        # (This page's code remains the same)
         st.header("⚙️ الإعدادات العامة")
         st.info("هنا يمكنك تعديل 'قوانين اللعبة' الأساسية التي تنطبق على جميع التحديات.")
         settings = db.load_global_settings()
