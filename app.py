@@ -14,22 +14,30 @@ st.set_page_config(
 # --- Initial Data Load & State Check ---
 all_data = db.get_all_data_for_stats()
 if all_data:
-    members = all_data.get('members', [])
-    periods = all_data.get('periods', [])
-    # Setup is complete if there's at least one member and one challenge period
-    setup_complete = bool(members and periods)
+    members_df = pd.DataFrame(all_data.get('members', []))
+    periods_df = pd.DataFrame(all_data.get('periods', []))
+    logs_df = pd.DataFrame(all_data.get('logs', []))
+    achievements_df = pd.DataFrame(all_data.get('achievements', []))
+    
+    # Load stats tables
+    member_stats_df = db.get_table_as_df('MemberStats')
+    if not member_stats_df.empty and not members_df.empty:
+        # Merge stats with member names for easier access
+        member_stats_df = pd.merge(member_stats_df, members_df, on='member_id')
+
+    setup_complete = not (members_df.empty or periods_df.empty)
 else:
-    members, periods, setup_complete = [], [], False
+    members_df, periods_df, logs_df, achievements_df, member_stats_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    setup_complete = False
 
 # --- Main Application Logic ---
 st.title("📚 لوحة تحكم تحدي القرّاء")
 
 # State 1: First-time setup wizard
 if not setup_complete:
+    # --- SETUP WIZARD (LOGIC REMAINS THE SAME) ---
     st.warning("👋 مرحباً بك! لنقم بإعداد تحدي القراءة الخاص بك.")
-    
-    # Step 1: Add members if none exist
-    if not members:
+    if members_df.empty:
         st.subheader("الخطوة 1: إضافة أعضاء المجموعة")
         with st.form("new_members_form"):
             names_str = st.text_area("أسماء الأعضاء", height=150, placeholder="خالد\nسارة\n...")
@@ -38,13 +46,10 @@ if not setup_complete:
                 if names:
                     db.add_members(names)
                     st.rerun()
-
-    # Step 2: Add the first challenge if members exist but no periods
-    elif not periods:
+    elif periods_df.empty:
         st.subheader("الخطوة 2: إنشاء أول فترة تحدي")
         with st.form("new_challenge_form", clear_on_submit=True):
-            st.text_input("عنوان الكتاب", key="book_title")
-            st.text_input("اسم المؤلف", key="book_author")
+            st.text_input("عنوان الكتاب", key="book_title"); st.text_input("اسم المؤلف", key="book_author")
             st.number_input("سنة النشر", key="pub_year", value=2024, step=1)
             st.date_input("تاريخ بداية التحدي", key="start_date")
             st.date_input("تاريخ نهاية التحدي", key="end_date", value=datetime.date.today() + datetime.timedelta(days=30))
@@ -53,14 +58,14 @@ if not setup_complete:
                     book_info = {'title': st.session_state.book_title, 'author': st.session_state.book_author, 'year': st.session_state.pub_year}
                     challenge_info = {'start_date': str(st.session_state.start_date), 'end_date': str(st.session_state.end_date)}
                     if db.add_book_and_challenge(book_info, challenge_info):
-                        # Set a flag to show the script page on the next rerun
                         st.session_state['show_script_after_setup'] = True
                         st.rerun()
                 else:
                     st.error("الرجاء ملء عنوان الكتاب والمؤلف.")
 
-# State 2: Show Apps Script code immediately after setup is complete (one-time only)
+# State 2: Show Apps Script code immediately after setup (one-time only)
 elif st.session_state.get('show_script_after_setup', False):
+    # --- APPS SCRIPT PAGE (LOGIC REMAINS THE SAME) ---
     st.success("🎉 تم إعداد التحدي بنجاح! الخطوة الأخيرة هي ربط نموذج جوجل.")
     st.header("⚙️ إنشاء وربط نموذج جوجل (Google Form)")
     st.info(
@@ -71,75 +76,34 @@ elif st.session_state.get('show_script_after_setup', False):
         3.  بعد تشغيل الكود هناك، اضغط على الزر أدناه للانتقال إلى لوحة التحكم.
         """
     )
-    
-    # Format member names for the JavaScript array
-    member_names_for_js = ',\n'.join([f'  "{member["name"]}"' for member in members])
-
-    # Full Google Apps Script code as a Python f-string
+    member_names_for_js = ',\n'.join([f'  "{name}"' for name in members_df['name']])
     apps_script_code = f"""
 function createReadingChallengeForm() {{
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  
   const memberNames = [
 {member_names_for_js}
   ];
-
   const form = FormApp.create('تسجيل القراءة اليومي - تحدي القرّاء')
     .setDescription('يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!')
     .setConfirmationMessage('شكراً لك، تم تسجيل قراءتك بنجاح!');
-
   form.setDestination(FormApp.DestinationType.SPREADSHEET, spreadsheet.getId());
-  
   const formUrl = form.getPublishedUrl();
   Logger.log('تم إنشاء النموذج بنجاح! الرابط الذي ستشاركه مع الأعضاء هو: ' + formUrl);
-
-  form.addListItem()
-    .setTitle('اسمك')
-    .setHelpText('اختر اسمك من القائمة.')
-    .setRequired(true)
-    .setChoiceValues(memberNames);
-
-  form.addDateItem()
-    .setTitle('تاريخ القراءة')
-    .setHelpText('حدد تاريخ اليوم الذي قرأت فيه.')
-    .setRequired(true);
-
-  form.addDurationItem()
-    .setTitle('مدة قراءة الكتاب المشترك')
-    .setHelpText('أدخل المدة التي قضيتها في قراءة الكتاب المشترك اليوم.')
-    .setRequired(true);
-
-  form.addDurationItem()
-    .setTitle('مدة قراءة كتاب آخر (إن وجد)')
-    .setHelpText('إذا كنت تقرأ كتاباً آخر، أدخل مدة قراءته هنا.')
-    .setRequired(false);
-
+  form.addListItem().setTitle('اسمك').setHelpText('اختر اسمك من القائمة.').setRequired(true).setChoiceValues(memberNames);
+  form.addDateItem().setTitle('تاريخ القراءة').setHelpText('حدد تاريخ اليوم الذي قرأت فيه.').setRequired(true);
+  form.addDurationItem().setTitle('مدة قراءة الكتاب المشترك').setHelpText('أدخل المدة التي قضيتها في قراءة الكتاب المشترك اليوم.').setRequired(true);
+  form.addDurationItem().setTitle('مدة قراءة كتاب آخر (إن وجد)').setHelpText('إذا كنت تقرأ كتاباً آخر، أدخل مدة قراءته هنا.').setRequired(false);
   const quoteItem = form.addCheckboxItem();
-  quoteItem.setTitle('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)')
-    .setChoices([
-      quoteItem.createChoice('أرسلت اقتباساً من الكتاب المشترك'),
-      quoteItem.createChoice('أرسلت اقتباساً من كتاب آخر')
-    ]);
-  
+  quoteItem.setTitle('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)').setChoices([quoteItem.createChoice('أرسلت اقتباساً من الكتاب المشترك'), quoteItem.createChoice('أرسلت اقتباساً من كتاب آخر')]);
   form.addPageBreakItem().setTitle('الإنجازات الخاصة (اختر ما ينطبق عليك *فقط* عند حدوثه)');
-  
   const achievementItem = form.addCheckboxItem();
-  achievementItem.setTitle('إنجازات الكتب والنقاش')
-      .setHelpText('اختر هذا الخيار مرة واحدة فقط لكل إنجاز للحصول على النقاط الإضافية.')
-      .setChoices([
-          achievementItem.createChoice('أنهيت الكتاب المشترك'),
-          achievementItem.createChoice('أنهيت كتاباً آخر'),
-          achievementItem.createChoice('حضرت جلسة النقاش')
-      ]);
-
+  achievementItem.setTitle('إنجازات الكتب والنقاش').setHelpText('اختر هذا الخيار مرة واحدة فقط لكل إنجاز للحصول على النقاط الإضافية.').setChoices([achievementItem.createChoice('أنهيت الكتاب المشترك'), achievementItem.createChoice('أنهيت كتاباً آخر'), achievementItem.createChoice('حضرت جلسة النقاش')]);
   Logger.log('اكتملت العملية بنجاح. يمكنك الآن إغلاق محرر السكربت. الرابط لمشاركته مع الأعضاء تم طباعته في السجل أعلاه.');
 }}
 """
     st.subheader("كود Google Apps Script المخصص لك")
     st.code(apps_script_code, language='javascript')
-
     if st.button("✅ لقد نسخت الكود، انتقل إلى لوحة التحكم"):
-        # Unset the flag and rerun to move to the normal app state
         st.session_state['show_script_after_setup'] = False
         st.rerun()
 
@@ -149,30 +113,190 @@ else:
     page_options = ["لوحة التحكم", "عرض البيانات", "الإضافات", "الإعدادات"]
     page = st.sidebar.radio("اختر صفحة", page_options, key="navigation")
 
+    # --- COMPLETE REWRITE OF THE DASHBOARD PAGE ---
     if page == "لوحة التحكم":
         st.header("📊 لوحة التحكم الرئيسية")
-        conn = db.get_db_connection()
-        try:
-            query = "SELECT m.name, ms.* FROM MemberStats ms JOIN Members m ON ms.member_id = m.member_id ORDER BY ms.total_points DESC"
-            stats_df = pd.read_sql_query(query, conn)
-        finally:
-            conn.close()
-        if not stats_df.empty:
-            st.subheader("إحصائيات سريعة للمجموعة")
-            col1, col2, col3, col4 = st.columns(4)
-            total_minutes = stats_df['total_reading_minutes_common'].sum() + stats_df['total_reading_minutes_other'].sum()
-            total_common_challenges = len(periods)
-            total_quotes = stats_df['total_quotes_submitted'].sum()
-            col1.metric("إجمالي ساعات القراءة", f"{total_minutes / 60:.1f} ساعة")
-            col2.metric("عدد التحديات", f"{total_common_challenges} تحدي")
-            col3.metric("إجمالي الاقتباسات", f"{total_quotes} اقتباس")
-            col4.metric("عدد المشاركين", f"{len(stats_df)} عضو")
-            st.divider()
-            st.subheader("🏆 قائمة المتصدرين")
-            st.dataframe(stats_df[['name', 'total_points']].rename(columns={'name': 'الاسم', 'total_points': 'النقاط'}), use_container_width=True, hide_index=True)
-        else:
-            st.info("لم يتم حساب أي إحصائيات بعد. يرجى تشغيل `main.py` أولاً.")
 
+        # --- 1. Control Panel & Filters ---
+        challenge_options = {period['period_id']: f"{period['title']} ({period['start_date']} to {period['end_date']})" for index, period in periods_df.iterrows()}
+        # Default to the most recent challenge
+        default_challenge_id = periods_df['period_id'].max()
+        selected_challenge_id = st.selectbox("اختر فترة التحدي لعرضها:", options=list(challenge_options.keys()), format_func=lambda x: challenge_options[x], index=0)
+
+        # Filter all data based on selected challenge
+        selected_period = periods_df[periods_df['period_id'] == selected_challenge_id].iloc[0]
+        start_date = pd.to_datetime(selected_period['start_date']).date()
+        end_date = pd.to_datetime(selected_period['end_date']).date()
+
+        # Filter logs for the selected period
+        logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y').dt.date
+        period_logs_df = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] <= end_date)]
+        
+        # Filter achievements for the selected period
+        period_achievements_df = achievements_df[achievements_df['period_id'] == selected_challenge_id]
+
+        # --- Display Challenge Info & Progress ---
+        with st.container(border=True):
+            st.subheader(f"📖 التحدي الحالي: {selected_period['title']}")
+            st.caption(f"تأليف: {selected_period['author']} | مدة التحدي: من {selected_period['start_date']} إلى {selected_period['end_date']}")
+            
+            days_total = (end_date - start_date).days + 1
+            days_passed = (datetime.date.today() - start_date).days + 1
+            progress = min(max(days_passed / days_total, 0), 1)
+            
+            st.progress(progress, text=f"انقضى {days_passed if days_passed > 0 else 0} يوم من أصل {days_total} يوم")
+
+        st.divider()
+
+        # --- 2. Main Dashboard with Tabs ---
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط", "🧐 تحليل فردي"])
+
+        with tab1:
+            st.subheader("نظرة عامة على أداء المجموعة")
+            
+            # --- KPIs ---
+            total_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum()
+            active_members_count = period_logs_df['member_id'].nunique()
+            total_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
+            meetings_attended = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].nunique()
+
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            kpi1.metric("إجمالي ساعات القراءة", f"{total_minutes / 60:.1f} ساعة")
+            kpi2.metric("الأعضاء النشطون", f"{active_members_count} عضو")
+            kpi3.metric("إجمالي الاقتباسات", f"{total_quotes} اقتباس")
+            kpi4.metric("حضور جلسة النقاش", f"{meetings_attended} عضو")
+            
+            st.divider()
+            
+            # --- Charts ---
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("زخم القراءة التراكمي")
+                if not period_logs_df.empty:
+                    # THE FIX IS HERE
+                    daily_minutes = period_logs_df.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reset_index(name='total_minutes')
+                    daily_minutes = daily_minutes.sort_values('submission_date_dt')
+                    daily_minutes['cumulative_minutes'] = daily_minutes['total_minutes'].cumsum()
+                    
+                    fig = px.area(daily_minutes, x='submission_date_dt', y='cumulative_minutes', title="مجموع دقائق القراءة اليومية", labels={'submission_date_dt': 'التاريخ', 'cumulative_minutes': 'مجموع الدقائق'})
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("لا توجد بيانات قراءة مسجلة لهذا التحدي بعد.")
+
+            with col2:
+                st.subheader("توزيع القراءة الأسبوعي")
+                if not period_logs_df.empty:
+                    period_logs_df['weekday'] = pd.to_datetime(period_logs_df['submission_date_dt']).dt.day_name()
+                    weekday_order = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+                    weekly_activity = period_logs_df.groupby('weekday')['common_book_minutes'].count().reindex(weekday_order).reset_index(name='logs_count')
+                    
+                    fig = px.bar(weekly_activity, x='weekday', y='logs_count', title="عدد تسجيلات القراءة حسب اليوم", labels={'weekday': 'اليوم', 'logs_count': 'عدد التسجيلات'})
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("لا توجد بيانات لرسم هذا المخطط.")
+
+        with tab2:
+            st.subheader("قائمة المتصدرين والإنجازات")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.subheader("🏆 المتصدرون حسب النقاط")
+                if not member_stats_df.empty:
+                    top_members = member_stats_df.sort_values('total_points', ascending=False)
+                    fig = px.bar(top_members, y='name', x='total_points', orientation='h', 
+                                 title="أعلى الأعضاء نقاطاً", text_auto=True,
+                                 labels={'name': 'اسم العضو', 'total_points': 'مجموع النقاط'})
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("لا توجد إحصائيات لعرضها. يرجى تشغيل main.py")
+                    
+            with col2:
+                st.subheader("🏅 أبطال الإنجازات")
+                if not period_achievements_df.empty and not member_stats_df.empty:
+                    # Finisher of the common book
+                    common_finishers = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
+                    if not common_finishers.empty:
+                        fastest_finisher_id = common_finishers.sort_values('achievement_date').iloc[0]['member_id']
+                        fastest_finisher_name = members_df[members_df['member_id'] == fastest_finisher_id]['name'].iloc[0]
+                        st.metric("🚀 القارئ الصاروخي (أنهى الكتاب أولاً)", fastest_finisher_name)
+
+                    # Most books finished
+                    finished_books_count = member_stats_df.set_index('name')[['total_common_books_read', 'total_other_books_read']].sum(axis=1)
+                    if not finished_books_count.empty:
+                        king_of_books = finished_books_count.idxmax()
+                        st.metric("👑 ملك الكتب (الأكثر إنهاءً للكتب)", king_of_books, int(finished_books_count.max()))
+
+                    # Most meetings attended
+                    meetings_count = member_stats_df.set_index('name')['meetings_attended']
+                    if not meetings_count.empty and meetings_count.max() > 0:
+                        discussion_dean = meetings_count.idxmax()
+                        st.metric("⭐ عميد الحضور (الأكثر حضوراً للنقاش)", discussion_dean, int(meetings_count.max()))
+                else:
+                    st.info("لم يتم تسجيل أي إنجازات بعد.")
+
+        with tab3:
+            st.subheader("تنبيهات حول نشاط الأعضاء")
+            st.warning("هذه القوائم تظهر الأعضاء الذين تجاوزوا الحد المسموح به للغياب وقد يتم تطبيق خصومات عليهم.")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("الغياب عن تسجيل القراءة")
+                if not member_stats_df.empty:
+                    inactive_loggers = member_stats_df[member_stats_df['log_streak'] > 0][['name', 'log_streak']].sort_values('log_streak', ascending=False)
+                    if not inactive_loggers.empty:
+                        st.dataframe(inactive_loggers.rename(columns={'name': 'الاسم', 'log_streak': 'أيام الغياب'}), use_container_width=True, hide_index=True)
+                    else:
+                        st.success("جميع الأعضاء ملتزمون بتسجيل قراءتهم. عمل رائع!")
+                else:
+                    st.info("لا توجد بيانات لعرضها.")
+
+            with col2:
+                st.subheader("الغياب عن إرسال الاقتباسات")
+                if not member_stats_df.empty:
+                    inactive_quoters = member_stats_df[member_stats_df['quote_streak'] > 0][['name', 'quote_streak']].sort_values('quote_streak', ascending=False)
+                    if not inactive_quoters.empty:
+                        st.dataframe(inactive_quoters.rename(columns={'name': 'الاسم', 'quote_streak': 'أيام بلا اقتباس'}), use_container_width=True, hide_index=True)
+                    else:
+                        st.success("جميع الأعضاء ملتزمون بإرسال الاقتباسات. ممتاز!")
+                else:
+                    st.info("لا توجد بيانات لعرضها.")
+
+
+        with tab4:
+            st.subheader("تحليل الأداء الفردي")
+            if not members_df.empty and not member_stats_df.empty:
+                member_list = members_df['name'].tolist()
+                selected_member_name = st.selectbox("اختر عضواً لعرض تحليله التفصيلي:", member_list)
+                
+                if selected_member_name:
+                    selected_member_id = members_df[members_df['name'] == selected_member_name]['member_id'].iloc[0]
+                    member_stats = member_stats_df[member_stats_df['member_id'] == selected_member_id].iloc[0]
+                    member_logs = period_logs_df[period_logs_df['member_id'] == selected_member_id]
+                    
+                    with st.container(border=True):
+                        st.header(f"بطاقة أداء: {selected_member_name}")
+                        
+                        m_col1, m_col2, m_col3 = st.columns(3)
+                        m_col1.metric("إجمالي النقاط", f"{member_stats['total_points']} نقطة")
+                        total_member_minutes = member_stats['total_reading_minutes_common'] + member_stats['total_reading_minutes_other']
+                        m_col2.metric("إجمالي ساعات القراءة", f"{total_member_minutes / 60:.1f} ساعة")
+                        m_col3.metric("إجمالي الاقتباسات", f"{member_stats['total_quotes_submitted']} اقتباس")
+                        
+                        st.divider()
+                        
+                        st.subheader("نمط القراءة اليومي")
+                        if not member_logs.empty:
+                            daily_data = member_logs.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum()
+                            st.bar_chart(daily_data)
+                        else:
+                            st.info(f"لم يسجل {selected_member_name} أي قراءة في هذا التحدي بعد.")
+            else:
+                st.info("لا يوجد أعضاء لعرضهم.")
+
+
+    # Other pages remain the same
     elif page == "عرض البيانات":
         st.header("🗂️ عرض بيانات قاعدة البيانات")
         table_names = db.get_table_names()
@@ -185,15 +309,14 @@ else:
     elif page == "الإضافات":
         st.header("➕ إدارة التحديات")
         st.subheader("قائمة التحديات الحالية والسابقة")
-        if periods:
-            periods_df = pd.DataFrame(periods)
+        if not periods_df.empty:
             st.dataframe(periods_df[['title', 'author', 'start_date', 'end_date']].rename(columns={'title': 'عنوان الكتاب', 'author': 'المؤلف', 'start_date': 'تاريخ البداية', 'end_date': 'تاريخ النهاية'}), use_container_width=True, hide_index=True)
         with st.expander("اضغط هنا لإضافة تحدي جديد"):
             with st.form("add_new_challenge_form", clear_on_submit=True):
                 new_title = st.text_input("عنوان الكتاب الجديد")
                 new_author = st.text_input("مؤلف الكتاب الجديد")
                 new_year = st.number_input("سنة نشر الكتاب الجديد", value=datetime.date.today().year, step=1)
-                last_end_date = datetime.datetime.strptime(periods[0]['end_date'], '%Y-%m-%d').date() if periods else datetime.date.today() - datetime.timedelta(days=1)
+                last_end_date = pd.to_datetime(periods_df['end_date'].max()).date() if not periods_df.empty else datetime.date.today() - datetime.timedelta(days=1)
                 suggested_start = last_end_date + datetime.timedelta(days=1)
                 new_start = st.date_input("تاريخ بداية التحدي الجديد", value=suggested_start)
                 new_end = st.date_input("تاريخ نهاية التحدي الجديد", value=suggested_start + datetime.timedelta(days=30))
@@ -208,8 +331,7 @@ else:
                         book_info = {'title': new_title, 'author': new_author, 'year': new_year}
                         challenge_info = {'start_date': str(new_start), 'end_date': str(new_end)}
                         if db.add_book_and_challenge(book_info, challenge_info):
-                            st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!")
-                            st.rerun()
+                            st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!"); st.rerun()
 
     elif page == "الإعدادات":
         st.header("⚙️ الإعدادات العامة")
