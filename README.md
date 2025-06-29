@@ -112,14 +112,29 @@ Finally, we give our script permission to read the sheet and then deploy the for
 You are now fully set up!
 
 * **Members:** Fill out the Google Form to log their daily reading.
-* **Admin (You):** Periodically, run the backend engine from your terminal to process new entries:
+* **Admin (You):**
+- Periodically, run the backend engine from your terminal to process new entries:
     ```bash
     python main.py
     ```
-* **Everyone:** View the live, updated results by running the Streamlit dashboard:
+- View the live, updated results by running the Streamlit dashboard:
     ```bash
     streamlit run app.py
     ```
+- So, in general, whenever you want to check the website/dashboard, you can open your command terminal and run the following:
+```bash
+# Navigate into the project directory
+cd Reading-Tracker-Dashboard
+
+# Activate the environment (on Windows)
+venv\Scripts\activate
+
+# Process new entries
+python main.py
+
+# Run the Streamlit dashboard
+streamlit run app.py
+```
 
 ## Project Structure
 ```
