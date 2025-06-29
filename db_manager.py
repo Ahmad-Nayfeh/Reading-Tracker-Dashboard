@@ -16,7 +16,6 @@ def get_db_connection():
 # --- READ Functions ---
 
 def load_global_settings():
-    """Loads the single row of global settings from the database."""
     conn = get_db_connection()
     settings_row = conn.execute("SELECT * FROM GlobalSettings WHERE setting_id = 1").fetchone()
     conn.close()
@@ -29,42 +28,24 @@ def get_all_data_for_stats():
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
-        periods = [dict(row) for row in conn.execute("SELECT cp.*, b.title FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC").fetchall()]
+        
+        # --- THE FIX IS HERE ---
+        # The query now also selects b.author and b.publication_year
+        query = "SELECT cp.*, b.title, b.author, b.publication_year FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC"
+        periods = [dict(row) for row in conn.execute(query).fetchall()]
+    
+    except sqlite3.Error as e:
+        print(f"Error fetching all data: {e}")
+        return None
     finally:
         conn.close()
+    
     return {"members": members, "logs": logs, "achievements": achievements, "periods": periods}
-
-def check_log_exists(timestamp):
-    """Checks if a log with a specific timestamp already exists."""
-    conn = get_db_connection()
-    log_exists = conn.execute("SELECT 1 FROM ReadingLogs WHERE timestamp = ?", (timestamp,)).fetchone()
-    conn.close()
-    return log_exists is not None
-
-def has_achievement(member_id, achievement_type, period_id):
-    """Checks if a member already has a specific achievement within a challenge period."""
-    conn = get_db_connection()
-    query = "SELECT 1 FROM Achievements WHERE member_id = ? AND achievement_type = ? AND period_id = ?"
-    achievement_exists = conn.execute(query, (member_id, achievement_type, period_id)).fetchone()
-    conn.close()
-    return achievement_exists is not None
-
-def did_submit_quote_today(member_id, submission_date, quote_type):
-    """Checks if a member has already submitted a specific type of quote today."""
-    conn = get_db_connection()
-    column_to_check = "submitted_common_quote" if quote_type == 'COMMON' else "submitted_other_quote"
-    query = f"SELECT 1 FROM ReadingLogs WHERE member_id = ? AND submission_date = ? AND {column_to_check} = 1"
-    quote_exists = conn.execute(query, (member_id, submission_date)).fetchone()
-    conn.close()
-    return quote_exists is not None
-
-# --- NEW: Functions for the Data Viewer page ---
 
 def get_table_names():
     """Gets all user-created table names from the database."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    # This query gets all tables but excludes sqlite's internal tables
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
     tables = [row['name'] for row in cursor.fetchall()]
     conn.close()
@@ -74,7 +55,6 @@ def get_table_as_df(table_name):
     """Fetches an entire table and returns it as a Pandas DataFrame."""
     conn = get_db_connection()
     try:
-        # Using pandas read_sql_query for simplicity and safety
         df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
     except Exception as e:
         print(f"Error reading table {table_name}: {e}")
@@ -83,9 +63,27 @@ def get_table_as_df(table_name):
         conn.close()
     return df
 
+# ... (The rest of the file, including check/has/did functions and all WRITE functions, remains unchanged)
+def check_log_exists(timestamp):
+    conn = get_db_connection()
+    log_exists = conn.execute("SELECT 1 FROM ReadingLogs WHERE timestamp = ?", (timestamp,)).fetchone()
+    conn.close()
+    return log_exists is not None
 
-# --- WRITE Functions ---
-# (All previous write functions remain the same)
+def has_achievement(member_id, achievement_type, period_id):
+    conn = get_db_connection()
+    query = "SELECT 1 FROM Achievements WHERE member_id = ? AND achievement_type = ? AND period_id = ?"
+    achievement_exists = conn.execute(query, (member_id, achievement_type, period_id)).fetchone()
+    conn.close()
+    return achievement_exists is not None
+
+def did_submit_quote_today(member_id, submission_date, quote_type):
+    conn = get_db_connection()
+    column_to_check = "submitted_common_quote" if quote_type == 'COMMON' else "submitted_other_quote"
+    query = f"SELECT 1 FROM ReadingLogs WHERE member_id = ? AND submission_date = ? AND {column_to_check} = 1"
+    quote_exists = conn.execute(query, (member_id, submission_date)).fetchone()
+    conn.close()
+    return quote_exists is not None
 
 def add_members(names_list):
     conn = get_db_connection()
@@ -121,5 +119,5 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
             conn.executemany("INSERT INTO MemberStats (member_id, total_points, total_reading_minutes_common, total_reading_minutes_other, total_common_books_read, total_other_books_read, total_quotes_submitted, meetings_attended, last_log_date, last_quote_date, log_streak, quote_streak) VALUES (:member_id, :total_points, :total_reading_minutes_common, :total_reading_minutes_other, :total_common_books_read, :total_other_books_read, :total_quotes_submitted, :meetings_attended, :last_log_date, :last_quote_date, :log_streak, :quote_streak)", member_stats_data)
         if group_stats_data:
              conn.executemany("INSERT INTO GroupStats (period_id, total_group_minutes_common, total_group_minutes_other, total_group_quotes_common, total_group_quotes_other, active_members) VALUES (:period_id, :total_group_minutes_common, :total_group_minutes_other, :total_group_quotes_common, :total_group_quotes_other, :active_members)", group_stats_data)
-    print(f"Successfully rebuilt stats tables.")
     conn.close()
+
