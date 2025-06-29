@@ -121,3 +121,33 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
              conn.executemany("INSERT INTO GroupStats (period_id, total_group_minutes_common, total_group_minutes_other, total_group_quotes_common, total_group_quotes_other, active_members) VALUES (:period_id, :total_group_minutes_common, :total_group_minutes_other, :total_group_quotes_common, :total_group_quotes_other, :active_members)", group_stats_data)
     conn.close()
 
+
+
+def update_global_settings(settings_dict):
+    """Updates the single row of global settings in the database."""
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE GlobalSettings
+                SET minutes_per_point_common = :minutes_per_point_common,
+                    minutes_per_point_other = :minutes_per_point_other,
+                    finish_common_book_points = :finish_common_book_points,
+                    finish_other_book_points = :finish_other_book_points,
+                    quote_common_book_points = :quote_common_book_points,
+                    quote_other_book_points = :quote_other_book_points,
+                    attend_discussion_points = :attend_discussion_points,
+                    no_log_days_trigger = :no_log_days_trigger,
+                    no_log_initial_penalty = :no_log_initial_penalty,
+                    no_log_subsequent_penalty = :no_log_subsequent_penalty,
+                    no_quote_days_trigger = :no_quote_days_trigger,
+                    no_quote_initial_penalty = :no_quote_initial_penalty,
+                    no_quote_subsequent_penalty = :no_quote_subsequent_penalty
+                WHERE setting_id = 1
+            """, settings_dict)
+        return True
+    except sqlite3.Error as e:
+        print(f"Error updating settings: {e}")
+        return False
+    finally:
+        conn.close()
