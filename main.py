@@ -92,14 +92,14 @@ def calculate_and_update_stats():
     if not settings or not all_data["members"]: return
 
     today = date.today()
+    
+    # --- Part A: Calculate Member Stats ---
     member_stats_data = []
-
     for member in all_data["members"]:
         member_id, total_points = member['member_id'], 0
         member_logs = sorted([log for log in all_data["logs"] if log['member_id'] == member_id], key=lambda x: datetime.strptime(x['submission_date'], '%d/%m/%Y').date())
         member_achievements = [ach for ach in all_data["achievements"] if ach['member_id'] == member_id]
         
-        # Points from reading time & quotes
         total_reading_minutes_common = sum(log['common_book_minutes'] for log in member_logs)
         total_reading_minutes_other = sum(log['other_book_minutes'] for log in member_logs)
         common_quotes_count = sum(log['submitted_common_quote'] for log in member_logs)
@@ -110,7 +110,6 @@ def calculate_and_update_stats():
         total_points += common_quotes_count * settings['quote_common_book_points']
         total_points += other_quotes_count * settings['quote_other_book_points']
         
-        # Points from Achievements
         finished_common_count = len([a for a in member_achievements if a['achievement_type'] == 'FINISHED_COMMON_BOOK'])
         attended_discussion_count = len([a for a in member_achievements if a['achievement_type'] == 'ATTENDED_DISCUSSION'])
         finished_other_raw_count = len([a for a in member_achievements if a['achievement_type'] == 'FINISHED_OTHER_BOOK'])
@@ -120,7 +119,6 @@ def calculate_and_update_stats():
         total_points += valid_finished_other_count * settings['finish_other_book_points']
         total_points += attended_discussion_count * settings['attend_discussion_points']
 
-        # Calculate Penalties
         last_log_date = datetime.strptime(member_logs[-1]['submission_date'], '%d/%m/%Y').date() if member_logs else datetime.strptime(all_data['periods'][0]['start_date'], '%Y-%m-%d').date()
         days_since_last_log = (today - last_log_date).days
         log_streak = 0
@@ -146,10 +144,41 @@ def calculate_and_update_stats():
             "last_log_date": str(last_log_date), "last_quote_date": str(last_quote_date),
             "log_streak": log_streak, "quote_streak": quote_streak
         })
-
-    # TODO: Calculate GroupStats
+    
+    # --- Part B: Calculate Group Stats (NEW LOGIC) ---
     group_stats_data = []
+    for period in all_data["periods"]:
+        period_id = period['period_id']
+        start_date = datetime.strptime(period['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(period['end_date'], '%Y-%m-%d').date()
+        
+        # Filter logs that fall within this challenge period
+        period_logs = [
+            log for log in all_data["logs"] 
+            if start_date <= datetime.strptime(log['submission_date'], '%d/%m/%Y').date() <= end_date
+        ]
+        
+        if not period_logs:
+            active_members = 0
+            total_group_minutes_common, total_group_minutes_other = 0, 0
+            total_group_quotes_common, total_group_quotes_other = 0, 0
+        else:
+            active_members = len(set(log['member_id'] for log in period_logs))
+            total_group_minutes_common = sum(log['common_book_minutes'] for log in period_logs)
+            total_group_minutes_other = sum(log['other_book_minutes'] for log in period_logs)
+            total_group_quotes_common = sum(log['submitted_common_quote'] for log in period_logs)
+            total_group_quotes_other = sum(log['submitted_other_quote'] for log in period_logs)
+            
+        group_stats_data.append({
+            "period_id": period_id,
+            "total_group_minutes_common": total_group_minutes_common,
+            "total_group_minutes_other": total_group_minutes_other,
+            "total_group_quotes_common": total_group_quotes_common,
+            "total_group_quotes_other": total_group_quotes_other,
+            "active_members": active_members
+        })
 
+    # --- Part C: Rebuild Stats Tables ---
     if member_stats_data:
         db.rebuild_stats_tables(member_stats_data, group_stats_data)
         
