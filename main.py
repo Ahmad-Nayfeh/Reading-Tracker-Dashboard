@@ -8,8 +8,7 @@ import db_manager as db
 # --- Configuration ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 SERVICE_ACCOUNT_FILE = 'credentials.json'
-SPREADSHEET_URL = "LINK_TO_YOUR_SPREADSHEET"
-
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TmFRDCp_OyJjlKJuU24OIVkdn3dgpE7DZKOnSmJcPuU/edit?gid=0#gid=0"
 
 # --- Helper Functions ---
 def parse_duration_to_minutes(duration_str):
