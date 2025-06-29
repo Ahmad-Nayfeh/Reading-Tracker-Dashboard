@@ -100,8 +100,8 @@ else:
     # --- MAIN DASHBOARD VIEW ---
     st.success("🎉 تم إعداد النظام بنجاح!")
     st.header("لوحة التحكم الرئيسية")
+    st.info(f"members = {members}")
     st.info("سيتم عرض الإحصائيات والرسوم البيانية هنا قريباً.")
-
     # Display current challenges
     st.subheader("فترات التحدي الحالية والسابقة:")
     periods_df = pd.DataFrame(periods)
