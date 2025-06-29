@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import db_manager as db 
+import db_manager as db
 import plotly.express as px
 
 # --- Page Configuration ---
@@ -11,11 +11,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Initial Data Load ---
+# --- Initial Data Load & State Check ---
 all_data = db.get_all_data_for_stats()
 if all_data:
     members = all_data.get('members', [])
     periods = all_data.get('periods', [])
+    # Setup is complete if there's at least one member and one challenge period
     setup_complete = bool(members and periods)
 else:
     members, periods, setup_complete = [], [], False
@@ -23,20 +24,27 @@ else:
 # --- Main Application Logic ---
 st.title("📚 لوحة تحكم تحدي القرّاء")
 
+# State 1: First-time setup wizard
 if not setup_complete:
-    # --- SETUP WIZARD ---
     st.warning("👋 مرحباً بك! لنقم بإعداد تحدي القراءة الخاص بك.")
+    
+    # Step 1: Add members if none exist
     if not members:
         st.subheader("الخطوة 1: إضافة أعضاء المجموعة")
         with st.form("new_members_form"):
             names_str = st.text_area("أسماء الأعضاء", height=150, placeholder="خالد\nسارة\n...")
             if st.form_submit_button("إضافة الأعضاء"):
                 names = [name.strip() for name in names_str.split('\n') if name.strip()]
-                if names: db.add_members(names); st.rerun()
+                if names:
+                    db.add_members(names)
+                    st.rerun()
+
+    # Step 2: Add the first challenge if members exist but no periods
     elif not periods:
         st.subheader("الخطوة 2: إنشاء أول فترة تحدي")
         with st.form("new_challenge_form", clear_on_submit=True):
-            st.text_input("عنوان الكتاب", key="book_title"); st.text_input("اسم المؤلف", key="book_author")
+            st.text_input("عنوان الكتاب", key="book_title")
+            st.text_input("اسم المؤلف", key="book_author")
             st.number_input("سنة النشر", key="pub_year", value=2024, step=1)
             st.date_input("تاريخ بداية التحدي", key="start_date")
             st.date_input("تاريخ نهاية التحدي", key="end_date", value=datetime.date.today() + datetime.timedelta(days=30))
@@ -44,10 +52,99 @@ if not setup_complete:
                 if st.session_state.book_title and st.session_state.book_author:
                     book_info = {'title': st.session_state.book_title, 'author': st.session_state.book_author, 'year': st.session_state.pub_year}
                     challenge_info = {'start_date': str(st.session_state.start_date), 'end_date': str(st.session_state.end_date)}
-                    if db.add_book_and_challenge(book_info, challenge_info): st.rerun()
-                else: st.error("الرجاء ملء عنوان الكتاب والمؤلف.")
+                    if db.add_book_and_challenge(book_info, challenge_info):
+                        # Set a flag to show the script page on the next rerun
+                        st.session_state['show_script_after_setup'] = True
+                        st.rerun()
+                else:
+                    st.error("الرجاء ملء عنوان الكتاب والمؤلف.")
+
+# State 2: Show Apps Script code immediately after setup is complete (one-time only)
+elif st.session_state.get('show_script_after_setup', False):
+    st.success("🎉 تم إعداد التحدي بنجاح! الخطوة الأخيرة هي ربط نموذج جوجل.")
+    st.header("⚙️ إنشاء وربط نموذج جوجل (Google Form)")
+    st.info(
+        """
+        لقد تم إنشاء كود **Google Apps Script** المخصص لمجموعتك.
+        1.  **انسخ** الكود الموجود في الأسفل.
+        2.  اتبع الخطوات المذكورة في ملف **README.md** لفتح محرر السكربت في Google Sheet ولصق هذا الكود.
+        3.  بعد تشغيل الكود هناك، اضغط على الزر أدناه للانتقال إلى لوحة التحكم.
+        """
+    )
+    
+    # Format member names for the JavaScript array
+    member_names_for_js = ',\n'.join([f'  "{member["name"]}"' for member in members])
+
+    # Full Google Apps Script code as a Python f-string
+    apps_script_code = f"""
+function createReadingChallengeForm() {{
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  const memberNames = [
+{member_names_for_js}
+  ];
+
+  const form = FormApp.create('تسجيل القراءة اليومي - تحدي القرّاء')
+    .setDescription('يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!')
+    .setConfirmationMessage('شكراً لك، تم تسجيل قراءتك بنجاح!');
+
+  form.setDestination(FormApp.DestinationType.SPREADSHEET, spreadsheet.getId());
+  
+  const formUrl = form.getPublishedUrl();
+  Logger.log('تم إنشاء النموذج بنجاح! الرابط الذي ستشاركه مع الأعضاء هو: ' + formUrl);
+
+  form.addListItem()
+    .setTitle('اسمك')
+    .setHelpText('اختر اسمك من القائمة.')
+    .setRequired(true)
+    .setChoiceValues(memberNames);
+
+  form.addDateItem()
+    .setTitle('تاريخ القراءة')
+    .setHelpText('حدد تاريخ اليوم الذي قرأت فيه.')
+    .setRequired(true);
+
+  form.addDurationItem()
+    .setTitle('مدة قراءة الكتاب المشترك')
+    .setHelpText('أدخل المدة التي قضيتها في قراءة الكتاب المشترك اليوم.')
+    .setRequired(true);
+
+  form.addDurationItem()
+    .setTitle('مدة قراءة كتاب آخر (إن وجد)')
+    .setHelpText('إذا كنت تقرأ كتاباً آخر، أدخل مدة قراءته هنا.')
+    .setRequired(false);
+
+  const quoteItem = form.addCheckboxItem();
+  quoteItem.setTitle('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)')
+    .setChoices([
+      quoteItem.createChoice('أرسلت اقتباساً من الكتاب المشترك'),
+      quoteItem.createChoice('أرسلت اقتباساً من كتاب آخر')
+    ]);
+  
+  form.addPageBreakItem().setTitle('الإنجازات الخاصة (اختر ما ينطبق عليك *فقط* عند حدوثه)');
+  
+  const achievementItem = form.addCheckboxItem();
+  achievementItem.setTitle('إنجازات الكتب والنقاش')
+      .setHelpText('اختر هذا الخيار مرة واحدة فقط لكل إنجاز للحصول على النقاط الإضافية.')
+      .setChoices([
+          achievementItem.createChoice('أنهيت الكتاب المشترك'),
+          achievementItem.createChoice('أنهيت كتاباً آخر'),
+          achievementItem.createChoice('حضرت جلسة النقاش')
+      ]);
+
+  Logger.log('اكتملت العملية بنجاح. يمكنك الآن إغلاق محرر السكربت. الرابط لمشاركته مع الأعضاء تم طباعته في السجل أعلاه.');
+}}
+"""
+    st.subheader("كود Google Apps Script المخصص لك")
+    st.code(apps_script_code, language='javascript')
+
+    if st.button("✅ لقد نسخت الكود، انتقل إلى لوحة التحكم"):
+        # Unset the flag and rerun to move to the normal app state
+        st.session_state['show_script_after_setup'] = False
+        st.rerun()
+
+# State 3: Normal application view after setup
 else:
-    # --- MAIN APPLICATION WITH 4 PAGES ---
     st.sidebar.title("تنقل")
     page_options = ["لوحة التحكم", "عرض البيانات", "الإضافات", "الإعدادات"]
     page = st.sidebar.radio("اختر صفحة", page_options, key="navigation")
@@ -58,7 +155,8 @@ else:
         try:
             query = "SELECT m.name, ms.* FROM MemberStats ms JOIN Members m ON ms.member_id = m.member_id ORDER BY ms.total_points DESC"
             stats_df = pd.read_sql_query(query, conn)
-        finally: conn.close()
+        finally:
+            conn.close()
         if not stats_df.empty:
             st.subheader("إحصائيات سريعة للمجموعة")
             col1, col2, col3, col4 = st.columns(4)
@@ -72,7 +170,8 @@ else:
             st.divider()
             st.subheader("🏆 قائمة المتصدرين")
             st.dataframe(stats_df[['name', 'total_points']].rename(columns={'name': 'الاسم', 'total_points': 'النقاط'}), use_container_width=True, hide_index=True)
-        else: st.info("لم يتم حساب أي إحصائيات بعد. يرجى تشغيل `main.py` أولاً.")
+        else:
+            st.info("لم يتم حساب أي إحصائيات بعد. يرجى تشغيل `main.py` أولاً.")
 
     elif page == "عرض البيانات":
         st.header("🗂️ عرض بيانات قاعدة البيانات")
@@ -109,7 +208,8 @@ else:
                         book_info = {'title': new_title, 'author': new_author, 'year': new_year}
                         challenge_info = {'start_date': str(new_start), 'end_date': str(new_end)}
                         if db.add_book_and_challenge(book_info, challenge_info):
-                            st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!"); st.rerun()
+                            st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!")
+                            st.rerun()
 
     elif page == "الإعدادات":
         st.header("⚙️ الإعدادات العامة")
@@ -120,7 +220,6 @@ else:
             with st.form("settings_form"):
                 st.subheader("نظام حساب النقاط")
                 c1, c2 = st.columns(2)
-                # Using st.session_state is not needed here if we load values directly
                 s_m_common = c1.number_input("دقائق قراءة الكتاب المشترك لكل نقطة:", value=settings['minutes_per_point_common'])
                 s_m_other = c2.number_input("دقائق قراءة كتاب آخر لكل نقطة:", value=settings['minutes_per_point_other'])
                 s_q_common = c1.number_input("نقاط اقتباس الكتاب المشترك:", value=settings['quote_common_book_points'])
