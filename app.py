@@ -112,38 +112,51 @@ else:
     page = st.sidebar.radio("اختر صفحة", page_options, key="navigation")
 
     if page == "لوحة التحكم":
-        # (This page's code remains the same as the last version)
         st.header("📊 لوحة التحكم الرئيسية")
+        
+        # --- Filter and data prep ---
         challenge_options = {period['period_id']: f"{period['title']} ({period['start_date']} to {period['end_date']})" for index, period in periods_df.iterrows()}
-        default_challenge_id = periods_df['period_id'].max()
+        default_challenge_id = periods_df['period_id'].max() if not periods_df.empty else 0
         selected_challenge_id = st.selectbox("اختر فترة التحدي لعرضها:", options=list(challenge_options.keys()), format_func=lambda x: challenge_options[x], index=0)
+        
         selected_period = periods_df[periods_df['period_id'] == selected_challenge_id].iloc[0]
         start_date = pd.to_datetime(selected_period['start_date']).date()
         end_date = pd.to_datetime(selected_period['end_date']).date()
+        
         logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y').dt.date
         period_logs_df = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] <= end_date)]
         period_achievements_df = achievements_df[achievements_df['period_id'] == selected_challenge_id]
+        
         with st.container(border=True):
             st.subheader(f"📖 التحدي الحالي: {selected_period['title']}")
             st.caption(f"تأليف: {selected_period['author']} | مدة التحدي: من {selected_period['start_date']} إلى {selected_period['end_date']}")
             days_total = (end_date - start_date).days + 1
             days_passed = (datetime.date.today() - start_date).days + 1
             progress = min(max(days_passed / days_total, 0), 1)
-            st.progress(progress, text=f"انقضى {days_passed if days_passed > 0 else 0} يوم من أصل {days_total} يوم")
+            st.progress(progress, text=f"انقضى {days_passed if days_passed >= 0 else 0} يوم من أصل {days_total} يوم")
+        
         st.divider()
+        
         tab1, tab2, tab3, tab4 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط", "🧐 تحليل فردي"])
+        
         with tab1:
             st.subheader("نظرة عامة على أداء المجموعة")
+            
+            # KPIs
             total_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum()
             active_members_count = period_logs_df['member_id'].nunique()
             total_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
-            meetings_attended = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].nunique()
+            meetings_attended_count = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].nunique()
+            
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("إجمالي ساعات القراءة", f"{total_minutes / 60:.1f} ساعة")
             kpi2.metric("الأعضاء النشطون", f"{active_members_count} عضو")
             kpi3.metric("إجمالي الاقتباسات", f"{total_quotes} اقتباس")
-            kpi4.metric("حضور جلسة النقاش", f"{meetings_attended} عضو")
+            kpi4.metric("حضور جلسة النقاش", f"{meetings_attended_count} عضو")
+            
             st.divider()
+
+            # First row of charts
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("زخم القراءة التراكمي")
@@ -151,7 +164,7 @@ else:
                     daily_minutes = period_logs_df.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reset_index(name='total_minutes')
                     daily_minutes = daily_minutes.sort_values('submission_date_dt')
                     daily_minutes['cumulative_minutes'] = daily_minutes['total_minutes'].cumsum()
-                    fig = px.area(daily_minutes, x='submission_date_dt', y='cumulative_minutes', title="مجموع دقائق القراءة اليومية", labels={'submission_date_dt': 'التاريخ', 'cumulative_minutes': 'مجموع الدقائق'})
+                    fig = px.area(daily_minutes, x='submission_date_dt', y='cumulative_minutes', labels={'submission_date_dt': 'التاريخ', 'cumulative_minutes': 'مجموع الدقائق'})
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("لا توجد بيانات قراءة مسجلة لهذا التحدي بعد.")
@@ -161,22 +174,106 @@ else:
                     period_logs_df['weekday'] = pd.to_datetime(period_logs_df['submission_date_dt']).dt.day_name()
                     weekday_order = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
                     weekly_activity = period_logs_df.groupby('weekday')['common_book_minutes'].count().reindex(weekday_order).reset_index(name='logs_count')
-                    fig = px.bar(weekly_activity, x='weekday', y='logs_count', title="عدد تسجيلات القراءة حسب اليوم", labels={'weekday': 'اليوم', 'logs_count': 'عدد التسجيلات'})
+                    fig = px.bar(weekly_activity, x='weekday', y='logs_count', labels={'weekday': 'اليوم', 'logs_count': 'عدد التسجيلات'})
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("لا توجد بيانات لرسم هذا المخطط.")
+            
+            st.divider()
+
+            # Second row of charts
+            st.subheader("تحليلات إضافية")
+            col3, col4 = st.columns(2)
+            with col3:
+                st.subheader("توزيع وقت القراءة")
+                if total_minutes > 0:
+                    reading_split_data = {
+                        'نوع القراءة': ['الكتاب المشترك', 'كتب أخرى'],
+                        'الدقائق': [period_logs_df['common_book_minutes'].sum(), period_logs_df['other_book_minutes'].sum()]
+                    }
+                    fig = px.pie(pd.DataFrame(reading_split_data), names='نوع القراءة', values='الدقائق', hole=0.4,
+                                 title="تقسيم وقت القراءة")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("لا توجد بيانات لعرض تقسيم وقت القراءة.")
+            
+            with col4:
+                st.subheader("تحليل مصادر النقاط")
+                settings = db.load_global_settings()
+
+                if settings:
+                    # حساب النقاط من دقائق القراءة
+                    reading_points_common = (period_logs_df['common_book_minutes'].sum() // settings.get('minutes_per_point_common', 1))
+                    reading_points_other = (period_logs_df['other_book_minutes'].sum() // settings.get('minutes_per_point_other', 1))
+                    
+                    # حساب النقاط من الاقتباسات
+                    quote_points_common = period_logs_df['submitted_common_quote'].sum() * settings.get('quote_common_book_points', 0)
+                    quote_points_other = period_logs_df['submitted_other_quote'].sum() * settings.get('quote_other_book_points', 0)
+
+                    # حساب النقاط من الإنجازات للفترة المحددة
+                    finish_points_common = len(period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']) * settings.get('finish_common_book_points', 0)
+                    finish_points_other = len(period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK']) * settings.get('finish_other_book_points', 0)
+                    discussion_points = meetings_attended_count * settings.get('attend_discussion_points', 0)
+
+                    # جمع الفئات الرئيسية
+                    total_reading_points = reading_points_common + reading_points_other
+                    total_quote_points = quote_points_common + quote_points_other
+                    total_finish_points = finish_points_common + finish_points_other
+                    
+                    # التحقق من وجود نقاط لعرضها
+                    total_all_points = total_reading_points + total_quote_points + total_finish_points + discussion_points
+                    
+                    if total_all_points > 0:
+                        # إنشاء بيانات المخطط مع التأكد من عدم وجود قيم صفرية
+                        chart_data = []
+                        
+                        if total_reading_points > 0:
+                            chart_data.append({"النشاط": "نقاط القراءة", "النقاط": total_reading_points})
+                        if total_quote_points > 0:
+                            chart_data.append({"النشاط": "نقاط الاقتباسات", "النقاط": total_quote_points})
+                        if total_finish_points > 0:
+                            chart_data.append({"النشاط": "نقاط إنهاء الكتب", "النقاط": total_finish_points})
+                        if discussion_points > 0:
+                            chart_data.append({"النشاط": "نقاط النقاش", "النقاط": discussion_points})
+                        
+                        if chart_data:
+                            # إنشاء DataFrame للمخطط
+                            points_df = pd.DataFrame(chart_data)
+                            
+                            # رسم المخطط الدائري
+                            fig = px.pie(
+                                points_df, 
+                                names='النشاط', 
+                                values='النقاط',
+                                title="من أين تأتي نقاط الفريق؟",
+                                hole=0.4
+                            )
+                            fig.update_traces(textposition='inside', textinfo='percent+label')
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("لا توجد نقاط مكتسبة بعد لعرض هذا التحليل.")
+                    else:
+                        st.info("لا توجد نقاط مكتسبة بعد لعرض هذا التحليل.")
+                else:
+                    st.info("لا يمكن تحميل إعدادات النقاط.")
+
         with tab2:
             st.subheader("قائمة المتصدرين والإنجازات")
+            
             col1, col2 = st.columns([2, 1])
+            
             with col1:
                 st.subheader("🏆 المتصدرون حسب النقاط")
                 if not member_stats_df.empty:
                     top_members = member_stats_df.sort_values('total_points', ascending=False)
-                    fig = px.bar(top_members, y='name', x='total_points', orientation='h', title="أعلى الأعضاء نقاطاً", text_auto=True, labels={'name': 'اسم العضو', 'total_points': 'مجموع النقاط'})
+                    fig = px.bar(top_members, y='name', x='total_points', orientation='h', 
+                                 title="أعلى الأعضاء نقاطاً", text_auto=True,
+                                 labels={'name': 'اسم العضو', 'total_points': 'مجموع النقاط'})
                     fig.update_layout(yaxis={'categoryorder':'total ascending'})
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("لا توجد إحصائيات لعرضها. يرجى تشغيل main.py")
+            
             with col2:
                 st.subheader("🏅 أبطال الإنجازات")
                 if not period_achievements_df.empty and not member_stats_df.empty:
@@ -184,18 +281,42 @@ else:
                     if not common_finishers.empty:
                         fastest_finisher_id = common_finishers.sort_values('achievement_date').iloc[0]['member_id']
                         fastest_finisher_name = members_df[members_df['member_id'] == fastest_finisher_id]['name'].iloc[0]
-                        st.metric("🚀 القارئ الصاروخي (أنهى الكتاب أولاً)", fastest_finisher_name)
+                        st.metric("🚀 القارئ الصاروخي", fastest_finisher_name)
+                    
                     finished_books_count = member_stats_df.set_index('name')[['total_common_books_read', 'total_other_books_read']].sum(axis=1)
                     if not finished_books_count.empty:
                         king_of_books = finished_books_count.idxmax()
-                        st.metric("👑 ملك الكتب (الأكثر إنهاءً للكتب)", king_of_books, int(finished_books_count.max()))
+                        st.metric("👑 ملك الكتب", king_of_books, int(finished_books_count.max()))
+                        
                     meetings_count = member_stats_df.set_index('name')['meetings_attended']
                     if not meetings_count.empty and meetings_count.max() > 0:
                         discussion_dean = meetings_count.idxmax()
-                        st.metric("⭐ عميد الحضور (الأكثر حضوراً للنقاش)", discussion_dean, int(meetings_count.max()))
+                        st.metric("⭐ عميد الحضور", discussion_dean, int(meetings_count.max()))
                 else:
                     st.info("لم يتم تسجيل أي إنجازات بعد.")
+            
+            st.divider()
+            
+            st.subheader("تحليل الاقتباسات حسب العضو")
+            if not period_logs_df.empty:
+                quote_data = period_logs_df.groupby('member_id')[['submitted_common_quote', 'submitted_other_quote']].sum().reset_index()
+                quote_data = pd.merge(quote_data, members_df, on='member_id')
+                quote_data = quote_data.melt(id_vars=['name'], value_vars=['submitted_common_quote', 'submitted_other_quote'],
+                                             var_name='نوع الاقتباس', value_name='العدد')
+                quote_data['نوع الاقتباس'] = quote_data['نوع الاقتباس'].map({
+                    'submitted_common_quote': 'اقتباس من كتاب مشترك',
+                    'submitted_other_quote': 'اقتباس من كتاب آخر'
+                })
+                
+                fig = px.bar(quote_data, x='name', y='العدد', color='نوع الاقتباس',
+                             title="تحليل الاقتباسات المرسلة من كل عضو",
+                             labels={'name': 'اسم العضو', 'العدد': 'عدد الاقتباسات'})
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("لا توجد بيانات اقتباسات لعرضها.")
+
         with tab3:
+            # (This tab's code remains the same)
             st.subheader("تنبيهات حول نشاط الأعضاء")
             st.warning("هذه القوائم تظهر الأعضاء الذين تجاوزوا الحد المسموح به للغياب وقد يتم تطبيق خصومات عليهم.")
             col1, col2 = st.columns(2)
@@ -219,7 +340,9 @@ else:
                         st.success("جميع الأعضاء ملتزمون بإرسال الاقتباسات. ممتاز!")
                 else:
                     st.info("لا توجد بيانات لعرضها.")
+
         with tab4:
+            # (This tab's code remains the same)
             st.subheader("تحليل الأداء الفردي")
             if not members_df.empty and not member_stats_df.empty:
                 member_list = members_df['name'].tolist()
@@ -245,82 +368,54 @@ else:
             else:
                 st.info("لا يوجد أعضاء لعرضهم.")
 
-    # --- REWRITTEN "DATA EXPLORER" PAGE ---
     elif page == "مستكشف البيانات":
+        # (This page's code remains the same)
         st.header("🔬 مستكشف البيانات")
-
-        # --- Data Health Check ---
         st.subheader("ملخص قاعدة البيانات")
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric("👥 عدد الأعضاء", f"{len(members_df)} عضو")
         kpi2.metric("📖 عدد الكتب", f"{len(books_df)} كتاب")
         kpi3.metric("✍️ إجمالي التسجيلات", f"{len(logs_df)} تسجيل")
-        
         st.divider()
         st.subheader("استعراض تفاصيل الجداول")
-        
-        # --- Reading Logs Expander ---
         with st.expander("📖 عرض جدول سجلات القراءة (ReadingLogs)"):
             if not logs_df.empty and not members_df.empty:
                 display_df = pd.merge(logs_df, members_df, on='member_id', how='left')
-                # Select and rename columns for a clean view
                 st.dataframe(
                     display_df[['timestamp', 'name', 'submission_date', 'common_book_minutes', 'other_book_minutes', 'submitted_common_quote', 'submitted_other_quote']].rename(columns={
-                        'timestamp': 'وقت التسجيل',
-                        'name': 'اسم العضو',
-                        'submission_date': 'تاريخ القراءة',
-                        'common_book_minutes': 'دقائق الكتاب المشترك',
-                        'other_book_minutes': 'دقائق الكتب الأخرى',
-                        'submitted_common_quote': 'أرسل اقتباس مشترك',
-                        'submitted_other_quote': 'أرسل اقتباس آخر'
-                    }), 
-                    use_container_width=True,
-                    hide_index=True
+                        'timestamp': 'وقت التسجيل', 'name': 'اسم العضو', 'submission_date': 'تاريخ القراءة',
+                        'common_book_minutes': 'دقائق الكتاب المشترك', 'other_book_minutes': 'دقائق الكتب الأخرى',
+                        'submitted_common_quote': 'أرسل اقتباس مشترك', 'submitted_other_quote': 'أرسل اقتباس آخر'
+                    }), use_container_width=True, hide_index=True
                 )
             else:
                 st.info("جدول سجلات القراءة فارغ.")
-
-        # --- Achievements Expander ---
         with st.expander("🏆 عرض جدول الإنجازات (Achievements)"):
             if not achievements_df.empty and not members_df.empty:
                 display_df = pd.merge(achievements_df, members_df, on='member_id', how='left')
-                # Merge with books, handling cases where book_id might be null
                 if not books_df.empty:
                     display_df = pd.merge(display_df, books_df, on='book_id', how='left', suffixes=('', '_book'))
-                
                 st.dataframe(
                     display_df[['achievement_date', 'name', 'achievement_type', 'title']].rename(columns={
-                        'achievement_date': 'تاريخ الإنجاز',
-                        'name': 'اسم العضو',
-                        'achievement_type': 'نوع الإنجاز',
-                        'title': 'عنوان الكتاب المرتبط'
-                    }), 
-                    use_container_width=True,
-                    hide_index=True
+                        'achievement_date': 'تاريخ الإنجاز', 'name': 'اسم العضو',
+                        'achievement_type': 'نوع الإنجاز', 'title': 'عنوان الكتاب المرتبط'
+                    }), use_container_width=True, hide_index=True
                 )
             else:
                 st.info("جدول الإنجازات فارغ.")
-
-        # --- Member Stats Expander ---
         with st.expander("📊 عرض جدول إحصائيات الأعضاء (MemberStats)"):
             if not member_stats_df.empty:
-                # Assuming member_stats_df is already merged with member names
-                display_df = member_stats_df.drop(columns=['member_id']) # Drop the ID as requested
+                display_df = member_stats_df.drop(columns=['member_id'])
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
                 st.info("جدول إحصائيات الأعضاء فارغ.")
-
-        # --- Other Tables Expander ---
         with st.expander("📚 عرض الجداول الأخرى (كتب، أعضاء، فترات التحدي)"):
             st.write("#### جدول الأعضاء (Members)")
             st.dataframe(members_df.drop(columns=['member_id']), use_container_width=True, hide_index=True)
-            
             st.write("#### جدول الكتب (Books)")
             st.dataframe(books_df.drop(columns=['book_id']), use_container_width=True, hide_index=True)
-
             st.write("#### جدول فترات التحدي (ChallengePeriods)")
             st.dataframe(periods_df.drop(columns=['period_id', 'common_book_id']), use_container_width=True, hide_index=True)
-
 
     elif page == "الإضافات":
         # (This page's code remains the same)
