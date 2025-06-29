@@ -1,14 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from db_manager import (
-    get_db_connection, 
-    get_all_members, 
-    add_members,
-    get_challenge_periods,
-    add_book,
-    add_challenge_period
-)
+import db_manager as db # Our single source for all DB interactions
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -17,19 +10,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Helper Functions ---
-def check_setup():
-    """Checks if the initial setup (members and first challenge) is complete."""
-    members = get_all_members()
-    periods = get_challenge_periods()
-    setup_complete = bool(members and periods)
-    return setup_complete, members, periods
+# --- Initial Data Load ---
+# We fetch all data once at the start to determine the app's state.
+all_data = db.get_all_data_for_stats()
+members = all_data['members']
+periods = all_data['periods']
+setup_complete = bool(members and periods)
 
 # --- Main Application Logic ---
 st.title("📚 لوحة تحكم تحدي القرّاء")
-
-# Check the setup status
-setup_complete, members, periods = check_setup()
 
 if not setup_complete:
     # --- SETUP WIZARD ---
@@ -48,9 +37,9 @@ if not setup_complete:
                 names = [name.strip() for name in member_names_str.split('\n') if name.strip()]
                 if names:
                     try:
-                        add_members(names)
+                        db.add_members(names)
                         st.success(f"تمت إضافة {len(names)} أعضاء بنجاح!")
-                        st.rerun() # Rerun to proceed to the next setup step
+                        st.rerun()
                     except Exception as e:
                         st.error(f"حدث خطأ: {e}")
                 else:
@@ -76,44 +65,43 @@ if not setup_complete:
             submitted = st.form_submit_button("إنشاء التحدي والبدء!")
 
             if submitted:
-                # Basic Validation
                 if not book_title or not book_author:
                     st.error("الرجاء إدخال عنوان الكتاب واسم المؤلف.")
                 elif start_date >= end_date:
                     st.error("يجب أن يكون تاريخ نهاية التحدي بعد تاريخ البداية.")
                 else:
-                    try:
-                        # 1. Add the book and get its ID
-                        book_id = add_book(book_title, book_author, publication_year)
-                        
-                        # 2. Add the challenge period with the new book ID
-                        add_challenge_period(str(start_date), str(end_date), book_id)
-                        
+                    book_info = {'title': book_title, 'author': book_author, 'year': publication_year}
+                    challenge_info = {'start_date': str(start_date), 'end_date': str(end_date)}
+                    
+                    if db.add_book_and_challenge(book_info, challenge_info):
                         st.success(f"تم إنشاء التحدي لكتاب '{book_title}' بنجاح!")
                         st.balloons()
-                        st.info("🎉 رائع! تم إكمال الإعداد. سيتم عرض لوحة التحكم الآن.")
-                        st.rerun() # Rerun to show the main dashboard
-                    except Exception as e:
-                        st.error(f"حدث خطأ في قاعدة البيانات أثناء إنشاء التحدي: {e}")
-
+                        st.rerun()
+                    else:
+                        st.error("حدث خطأ في قاعدة البيانات أثناء إنشاء التحدي.")
 else:
     # --- MAIN DASHBOARD VIEW ---
-    st.success("🎉 تم إعداد النظام بنجاح!")
-    st.header("لوحة التحكم الرئيسية")
-    st.info(f"members = {members}")
-    st.info("سيتم عرض الإحصائيات والرسوم البيانية هنا قريباً.")
-    # Display current challenges
-    st.subheader("فترات التحدي الحالية والسابقة:")
-    periods_df = pd.DataFrame(periods)
-    st.dataframe(
-        periods_df[['title', 'author', 'start_date', 'end_date']],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "title": "عنوان الكتاب",
-            "author": "المؤلف",
-            "start_date": "تاريخ البداية",
-            "end_date": "تاريخ النهاية"
-        }
-    )
+    # This is where we will build the 4 pages you designed.
+    st.sidebar.title("تنقل")
+    page = st.sidebar.radio("اختر صفحة", ["لوحة التحكم", "عرض البيانات", "الإضافات", "الإعدادات"])
+
+    if page == "لوحة التحكم":
+        st.header("📊 لوحة التحكم الرئيسية (Dashboard)")
+        st.info("سيتم عرض الإحصائيات والرسوم البيانية هنا قريباً.")
+        # TODO: Build Dashboard UI
+    
+    elif page == "عرض البيانات":
+        st.header("🗂️ عرض البيانات (Data Viewer)")
+        st.info("سيتم عرض جداول البيانات هنا مع إمكانية الفلترة.")
+        # TODO: Build Data Viewer UI
+
+    elif page == "الإضافات":
+        st.header("➕ الإضافات (Add New)")
+        st.info("سيتم عرض زر لإضافة تحدي جديد هنا.")
+        # TODO: Build Add-ons UI
+
+    elif page == "الإعدادات":
+        st.header("⚙️ الإعدادات (Settings)")
+        st.info("سيتم عرض الإعدادات العامة والخاصة هنا.")
+        # TODO: Build Settings UI
 
