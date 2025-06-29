@@ -4,11 +4,18 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, date, timedelta
 import os
 import db_manager as db
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 
 # --- Configuration ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 SERVICE_ACCOUNT_FILE = 'credentials.json'
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TmFRDCp_OyJjlKJuU24OIVkdn3dgpE7DZKOnSmJcPuU/edit?gid=0#gid=0"
+
+# Get the spreadsheet URL from environment variables
+SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 
 # --- Helper Functions ---
 def parse_duration_to_minutes(duration_str):
