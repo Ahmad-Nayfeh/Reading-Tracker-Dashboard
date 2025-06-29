@@ -3,6 +3,8 @@ import pandas as pd
 import datetime
 import db_manager as db
 import plotly.express as px
+import plotly.graph_objects as go
+
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -121,8 +123,13 @@ else:
         start_date = pd.to_datetime(selected_period['start_date']).date()
         end_date = pd.to_datetime(selected_period['end_date']).date()
         
-        logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y').dt.date
-        period_logs_df = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] <= end_date)]
+        if not logs_df.empty:
+            logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y').dt.date
+            # THE FIX IS HERE: Use .copy() to avoid the warning
+            period_logs_df = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] <= end_date)].copy()
+        else:
+            period_logs_df = pd.DataFrame()
+            
         period_achievements_df = achievements_df[achievements_df['period_id'] == selected_challenge_id]
         
         days_total = (end_date - start_date).days + 1
@@ -136,17 +143,16 @@ else:
         
         st.divider()
         
-        # REMOVED THE LAST TWO TABS
-        tab1, tab2, tab3 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط", "👤 بطاقة القارئ"])
         
         with tab1:
             st.subheader("نظرة عامة على أداء المجموعة")
             
             # KPIs
-            total_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum()
+            total_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum() if not period_logs_df.empty else 0
             active_members_count = period_logs_df['member_id'].nunique()
-            total_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
-            meetings_attended_count = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].nunique()
+            total_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum() if not period_logs_df.empty else 0
+            meetings_attended_count = period_achievements_df['member_id'].nunique() if not period_achievements_df.empty else 0
             avg_daily_reading = (total_minutes / active_members_count / days_passed) if active_members_count > 0 and days_passed > 0 else 0
 
             kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
@@ -158,7 +164,6 @@ else:
             
             st.divider()
 
-            # First row of charts
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("زخم القراءة التراكمي")
@@ -173,6 +178,7 @@ else:
             with col2:
                 st.subheader("توزيع القراءة الأسبوعي")
                 if not period_logs_df.empty:
+                    # THE FIX IS HERE: Add .copy() before modification
                     period_logs_df['weekday'] = pd.to_datetime(period_logs_df['submission_date_dt']).dt.day_name()
                     weekday_order = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
                     weekly_activity = period_logs_df.groupby('weekday')['common_book_minutes'].count().reindex(weekday_order).reset_index(name='logs_count')
@@ -182,8 +188,7 @@ else:
                     st.info("لا توجد بيانات لرسم هذا المخطط.")
             
             st.divider()
-
-            # Second row of charts
+            
             st.subheader("تحليلات إضافية")
             col3, col4 = st.columns(2)
             with col3:
@@ -193,12 +198,10 @@ else:
                         'نوع القراءة': ['الكتاب المشترك', 'كتب أخرى'],
                         'الدقائق': [period_logs_df['common_book_minutes'].sum(), period_logs_df['other_book_minutes'].sum()]
                     }
-                    fig = px.pie(pd.DataFrame(reading_split_data), names='نوع القراءة', values='الدقائق', hole=0.4,
-                                 title="تقسيم وقت القراءة")
+                    fig = px.pie(pd.DataFrame(reading_split_data), names='نوع القراءة', values='الدقائق', hole=0.4, title="تقسيم وقت القراءة")
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("لا توجد بيانات لعرض تقسيم وقت القراءة.")
-            
             with col4:
                 st.subheader("تحليل مصادر النقاط")
                 settings = db.load_global_settings()
@@ -306,6 +309,75 @@ else:
                         st.success("جميع الأعضاء ملتزمون بإرسال الاقتباسات. ممتاز!")
                 else:
                     st.info("لا توجد بيانات لعرضها.")
+        
+        with tab4:
+            st.subheader("👤 بطاقة القارئ: تحليل الأداء الفردي")
+            if not members_df.empty:
+                member_list = members_df['name'].tolist()
+                selected_member_name = st.selectbox("اختر قارئًا لعرض بطاقته:", member_list)
+                if selected_member_name:
+                    member_id = members_df[members_df['name'] == selected_member_name]['member_id'].iloc[0]
+                    # THE FIX IS HERE: Use .copy() to avoid the warning
+                    member_logs_all = logs_df[logs_df['member_id'] == member_id].copy()
+                    member_stats_all = member_stats_df[member_stats_df['member_id'] == member_id].iloc[0]
+                    st.header(f"بطاقة أداء: {selected_member_name}")
+                    total_books_read = member_stats_all['total_common_books_read'] + member_stats_all['total_other_books_read']
+                    total_reading_hours = (member_stats_all['total_reading_minutes_common'] + member_stats_all['total_reading_minutes_other']) / 60
+                    days_logged = member_logs_all['submission_date_dt'].nunique()
+                    total_minutes_logged = member_logs_all['common_book_minutes'].sum() + member_logs_all['other_book_minutes'].sum()
+                    avg_minutes_per_reading_day = total_minutes_logged / days_logged if days_logged > 0 else 0
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("📚 إجمالي الكتب المنهَاة", f"{total_books_read} كتاب")
+                    kpi2.metric("⏱️ إجمالي ساعات القراءة", f"{total_reading_hours:.1f} ساعة")
+                    kpi3.metric("📈 متوسط القراءة اليومي", f"{avg_minutes_per_reading_day:.1f} دقيقة/يوم")
+                    st.divider()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("نمط القراءة اليومي (آخر 30 يوم)")
+                        if not member_logs_all.empty:
+                            thirty_days_ago = datetime.date.today() - datetime.timedelta(days=30)
+                            recent_logs = member_logs_all[member_logs_all['submission_date_dt'] > thirty_days_ago]
+                            if not recent_logs.empty:
+                                daily_data = recent_logs.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reset_index(name='total_minutes')
+                                fig = px.bar(daily_data, x='submission_date_dt', y='total_minutes', title="دقائق القراءة اليومية", labels={'submission_date_dt': 'التاريخ', 'total_minutes': 'مجموع الدقائق'})
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("لم يتم تسجيل أي قراءة في آخر 30 يوم.")
+                        else:
+                            st.info("لا توجد سجلات قراءة لهذا العضو.")
+                    with col2:
+                        st.subheader("ساعات القراءة التراكمية")
+                        if not member_logs_all.empty:
+                            cumulative_logs = member_logs_all.sort_values('submission_date_dt')
+                            cumulative_logs['total_minutes'] = cumulative_logs['common_book_minutes'] + cumulative_logs['other_book_minutes']
+                            cumulative_logs['cumulative_hours'] = cumulative_logs['total_minutes'].cumsum() / 60
+                            fig = px.area(cumulative_logs, x='submission_date_dt', y='cumulative_hours', title="نمو إجمالي ساعات القراءة", labels={'submission_date_dt': 'التاريخ', 'cumulative_hours': 'مجموع الساعات'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("لا توجد بيانات كافية لرسم هذا المخطط.")
+                    st.divider()
+                    st.subheader("شخصيتك القرائية الأسبوعية")
+                    if not member_logs_all.empty:
+                        member_logs_all['weekday'] = pd.to_datetime(member_logs_all['submission_date_dt']).dt.day_name()
+                        weekday_order = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+                        weekly_avg = member_logs_all.groupby('weekday')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reindex(weekday_order).reset_index(name='total_minutes')
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatterpolar(
+                              r=weekly_avg['total_minutes'],
+                              theta=weekly_avg['weekday'],
+                              fill='toself',
+                              name='مجموع دقائق القراءة'
+                        ))
+                        fig.update_layout(
+                          polar=dict(radialaxis=dict(visible=True, range=[0, weekly_avg['total_minutes'].max()])),
+                          showlegend=False,
+                          title="متوسط نشاطك خلال أيام الأسبوع"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("لا توجد بيانات كافية لعرض شخصيتك القرائية.")
+            else:
+                st.info("لا يوجد أعضاء في قاعدة البيانات لعرضهم.")
 
     elif page == "مستكشف البيانات":
         st.header("🔬 مستكشف البيانات")
