@@ -26,7 +26,7 @@ Open your terminal or command prompt, and run the following commands to clone th
 
 ```bash
 # Clone the repository to your computer
-git clone [https://github.com/your-username/Reading-Tracker-Dashboard.git](https://github.com/your-username/Reading-Tracker-Dashboard.git)
+git clone https://github.com/Ahmad-Nayfeh/Reading-Tracker-Dashboard.git
 
 # Navigate into the project directory
 cd Reading-Tracker-Dashboard
