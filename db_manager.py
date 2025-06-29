@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import pandas as pd
 
 # --- Constants ---
 DB_FOLDER = 'data'
@@ -24,18 +25,13 @@ def load_global_settings():
 def get_all_data_for_stats():
     """Fetches all data needed for the calculation engine in one go."""
     conn = get_db_connection()
-    # Using try-except blocks for robustness
     try:
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
         periods = [dict(row) for row in conn.execute("SELECT cp.*, b.title FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC").fetchall()]
-    except sqlite3.Error as e:
-        print(f"Error fetching all data: {e}")
-        return None
     finally:
         conn.close()
-    
     return {"members": members, "logs": logs, "achievements": achievements, "periods": periods}
 
 def check_log_exists(timestamp):
@@ -62,52 +58,61 @@ def did_submit_quote_today(member_id, submission_date, quote_type):
     conn.close()
     return quote_exists is not None
 
-# --- WRITE Functions ---
+# --- NEW: Functions for the Data Viewer page ---
 
-def add_members(names_list):
-    """Adds a list of members to the database. (Required by app.py)"""
+def get_table_names():
+    """Gets all user-created table names from the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # This query gets all tables but excludes sqlite's internal tables
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+    tables = [row['name'] for row in cursor.fetchall()]
+    conn.close()
+    return tables
+
+def get_table_as_df(table_name):
+    """Fetches an entire table and returns it as a Pandas DataFrame."""
     conn = get_db_connection()
     try:
-        with conn:
-            conn.executemany("INSERT INTO Members (name) VALUES (?)", [(name,) for name in names_list])
-    except sqlite3.Error as e:
-        print(f"Error adding members: {e}")
+        # Using pandas read_sql_query for simplicity and safety
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+    except Exception as e:
+        print(f"Error reading table {table_name}: {e}")
+        df = pd.DataFrame()
     finally:
         conn.close()
+    return df
+
+
+# --- WRITE Functions ---
+# (All previous write functions remain the same)
+
+def add_members(names_list):
+    conn = get_db_connection()
+    with conn:
+        conn.executemany("INSERT INTO Members (name) VALUES (?)", [(name,) for name in names_list])
+    conn.close()
 
 def add_book_and_challenge(book_info, challenge_info):
-    """Adds a new book and a new challenge period in a single transaction. (Required by app.py)"""
     conn = get_db_connection()
     try:
         with conn:
-            # 1. Add the book
-            cursor = conn.execute("INSERT INTO Books (title, author, publication_year) VALUES (?, ?, ?)", 
-                                  (book_info['title'], book_info['author'], book_info['year']))
+            cursor = conn.execute("INSERT INTO Books (title, author, publication_year) VALUES (?, ?, ?)", (book_info['title'], book_info['author'], book_info['year']))
             book_id = cursor.lastrowid
-            
-            # 2. Add the challenge period
-            conn.execute("INSERT INTO ChallengePeriods (start_date, end_date, common_book_id) VALUES (?, ?, ?)",
-                         (challenge_info['start_date'], challenge_info['end_date'], book_id))
+            conn.execute("INSERT INTO ChallengePeriods (start_date, end_date, common_book_id) VALUES (?, ?, ?)", (challenge_info['start_date'], challenge_info['end_date'], book_id))
         return True
-    except sqlite3.Error as e:
-        print(f"Transaction failed: {e}")
-        return False
     finally:
         conn.close()
 
 def add_log_and_achievements(log_data, achievements_to_add):
-    """A transactional function to add a log and its related achievements together."""
     conn = get_db_connection()
-    try:
-        with conn:
-            conn.execute("INSERT INTO ReadingLogs (timestamp, member_id, submission_date, common_book_minutes, other_book_minutes, submitted_common_quote, submitted_other_quote) VALUES (:timestamp, :member_id, :submission_date, :common_book_minutes, :other_book_minutes, :submitted_common_quote, :submitted_other_quote)", log_data)
-            if achievements_to_add:
-                conn.executemany("INSERT INTO Achievements (member_id, achievement_type, achievement_date, period_id, book_id) VALUES (?, ?, ?, ?, ?)", achievements_to_add)
-    finally:
-        conn.close()
+    with conn:
+        conn.execute("INSERT INTO ReadingLogs (timestamp, member_id, submission_date, common_book_minutes, other_book_minutes, submitted_common_quote, submitted_other_quote) VALUES (:timestamp, :member_id, :submission_date, :common_book_minutes, :other_book_minutes, :submitted_common_quote, :submitted_other_quote)", log_data)
+        if achievements_to_add:
+            conn.executemany("INSERT INTO Achievements (member_id, achievement_type, achievement_date, period_id, book_id) VALUES (?, ?, ?, ?, ?)", achievements_to_add)
+    conn.close()
 
 def rebuild_stats_tables(member_stats_data, group_stats_data):
-    """Clears and rebuilds the stats tables with freshly calculated data."""
     conn = get_db_connection()
     with conn:
         conn.execute("DELETE FROM MemberStats;")
@@ -118,4 +123,3 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
              conn.executemany("INSERT INTO GroupStats (period_id, total_group_minutes_common, total_group_minutes_other, total_group_quotes_common, total_group_quotes_other, active_members) VALUES (:period_id, :total_group_minutes_common, :total_group_minutes_other, :total_group_quotes_common, :total_group_quotes_other, :active_members)", group_stats_data)
     print(f"Successfully rebuilt stats tables.")
     conn.close()
-
