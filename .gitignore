@@ -1,5 +1,4 @@
+__pycache__/
 venv/
 data/
-credentials.json
-__pycache__/
-.env
+client_secret.json
