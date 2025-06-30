@@ -13,43 +13,69 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- READ Functions ---
+# --- NEW/UPDATED Functions for AppSettings ---
+
+def set_setting(key, value):
+    """
+    Saves or updates a key-value pair in the AppSettings table.
+    This is used to store the Google Sheet and Form URLs.
+    The "INSERT OR REPLACE" command is a convenient way to handle both
+    creation of a new setting and updating an existing one.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO AppSettings (key, value) VALUES (?, ?)", (key, str(value)))
+    except sqlite3.Error as e:
+        print(f"Database error in set_setting: {e}")
+    finally:
+        conn.close()
+
+def get_setting(key):
+    """
+    Retrieves a value by its key from the AppSettings table.
+    Returns the value if the key is found, otherwise returns None.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT value FROM AppSettings WHERE key = ?", (key,)).fetchone()
+        return row['value'] if row and row['value'] else None
+    except sqlite3.Error as e:
+        print(f"Database error in get_setting: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+# --- READ Functions (Existing, no changes needed) ---
 
 def load_global_settings():
+    """Loads the general rules of the challenge (points, penalties)."""
     conn = get_db_connection()
-    settings_row = conn.execute("SELECT * FROM GlobalSettings WHERE setting_id = 1").fetchone()
-    conn.close()
-    return dict(settings_row) if settings_row else None
+    try:
+        settings_row = conn.execute("SELECT * FROM GlobalSettings WHERE setting_id = 1").fetchone()
+        return dict(settings_row) if settings_row else None
+    finally:
+        conn.close()
+
 
 def get_all_data_for_stats():
-    """Fetches all data needed for the calculation engine in one go."""
+    """Fetches all data needed for the calculation engine in one go for efficiency."""
     conn = get_db_connection()
     try:
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
-        
-        # --- THE FIX IS HERE ---
-        # The query now also selects b.author and b.publication_year
         query = "SELECT cp.*, b.title, b.author, b.publication_year FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC"
         periods = [dict(row) for row in conn.execute(query).fetchall()]
     
     except sqlite3.Error as e:
-        print(f"Error fetching all data: {e}")
+        print(f"Error fetching all data from database: {e}")
         return None
     finally:
         conn.close()
     
     return {"members": members, "logs": logs, "achievements": achievements, "periods": periods}
-
-def get_table_names():
-    """Gets all user-created table names from the database."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
-    tables = [row['name'] for row in cursor.fetchall()]
-    conn.close()
-    return tables
 
 def get_table_as_df(table_name):
     """Fetches an entire table and returns it as a Pandas DataFrame."""
@@ -63,7 +89,6 @@ def get_table_as_df(table_name):
         conn.close()
     return df
 
-# ... (The rest of the file, including check/has/did functions and all WRITE functions, remains unchanged)
 def check_log_exists(timestamp):
     conn = get_db_connection()
     log_exists = conn.execute("SELECT 1 FROM ReadingLogs WHERE timestamp = ?", (timestamp,)).fetchone()
@@ -84,6 +109,8 @@ def did_submit_quote_today(member_id, submission_date, quote_type):
     quote_exists = conn.execute(query, (member_id, submission_date)).fetchone()
     conn.close()
     return quote_exists is not None
+
+# --- WRITE Functions (Existing, no changes needed) ---
 
 def add_members(names_list):
     conn = get_db_connection()
@@ -121,10 +148,7 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
              conn.executemany("INSERT INTO GroupStats (period_id, total_group_minutes_common, total_group_minutes_other, total_group_quotes_common, total_group_quotes_other, active_members) VALUES (:period_id, :total_group_minutes_common, :total_group_minutes_other, :total_group_quotes_common, :total_group_quotes_other, :active_members)", group_stats_data)
     conn.close()
 
-
-
 def update_global_settings(settings_dict):
-    """Updates the single row of global settings in the database."""
     conn = get_db_connection()
     try:
         with conn:
