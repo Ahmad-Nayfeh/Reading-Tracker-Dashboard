@@ -61,10 +61,10 @@
 
 ```bash
 # 1. انسخ المستودع إلى جهازك
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git
+git clone https://github.com/Ahmad-Nayfeh/Reading-Tracker-Dashboard.git
 
 # 2. انتقل إلى مجلد المشروع
-cd YOUR_REPOSITORY_NAME
+cd Reading-Tracker-Dashboard
 
 # 3. أنشئ بيئة افتراضية (مستحسن)
 python -m venv venv
