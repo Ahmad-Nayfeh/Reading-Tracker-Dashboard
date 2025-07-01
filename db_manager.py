@@ -175,3 +175,67 @@ def update_global_settings(settings_dict):
         return False
     finally:
         conn.close()
+
+
+# أضف هذه الدالة الجديدة إلى ملف db_manager.py
+
+def delete_challenge(period_id):
+    """
+    Deletes a challenge period and all associated data from achievements and stats.
+    Note: This does not delete ReadingLogs as they are not directly linked to a period.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            # First, delete associated achievements for that period
+            conn.execute("DELETE FROM Achievements WHERE period_id = ?", (period_id,))
+            
+            # Second, delete associated group stats for that period
+            conn.execute("DELETE FROM GroupStats WHERE period_id = ?", (period_id,))
+            
+            # Finally, delete the challenge period itself
+            # We need to get the book_id first to delete the book later if it's not used by other challenges
+            cursor = conn.execute("SELECT common_book_id FROM ChallengePeriods WHERE period_id = ?", (period_id,))
+            result = cursor.fetchone()
+            if result:
+                book_id = result['common_book_id']
+                conn.execute("DELETE FROM ChallengePeriods WHERE period_id = ?", (period_id,))
+                
+                # Optional: Check if the book is used in any other challenges
+                cursor = conn.execute("SELECT COUNT(*) FROM ChallengePeriods WHERE common_book_id = ?", (book_id,))
+                if cursor.fetchone()[0] == 0:
+                    # If the book is not used anywhere else, delete it
+                    conn.execute("DELETE FROM Books WHERE book_id = ?", (book_id,))
+        return True
+    except sqlite3.Error as e:
+        print(f"Database error in delete_challenge: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# أضف هذه الدالة الجديدة إلى ملف db_manager.py
+
+def delete_member(member_id):
+    """
+    Deletes a member and all their associated data (logs, achievements, stats)
+    from the database. This is a cascading delete.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            # The order is important due to foreign key constraints.
+            # 1. Delete from MemberStats
+            conn.execute("DELETE FROM MemberStats WHERE member_id = ?", (member_id,))
+            # 2. Delete from Achievements
+            conn.execute("DELETE FROM Achievements WHERE member_id = ?", (member_id,))
+            # 3. Delete from ReadingLogs
+            conn.execute("DELETE FROM ReadingLogs WHERE member_id = ?", (member_id,))
+            # 4. Finally, delete the member from the Members table
+            conn.execute("DELETE FROM Members WHERE member_id = ?", (member_id,))
+        return True
+    except sqlite3.Error as e:
+        print(f"Database error in delete_member: {e}")
+        return False
+    finally:
+        conn.close()
