@@ -58,7 +58,8 @@ def authenticate():
             redirect_uri='http://localhost:8501' # Must match Google Cloud Console
         )
     except FileNotFoundError:
-        st.error(f"خطأ حرج: ملف '{CLIENT_SECRET_FILE}' غير موجود. الرجاء التأكد من وضعه في المجلد الرئيسي للمشروع.")
+        # --- LINGUISTIC UPDATE ---
+        st.error(f"🔑 **خطأ في الإعدادات:** لم يتم العثور على ملف `{CLIENT_SECRET_FILE}`. يرجى التأكد من اتباع إرشادات الإعداد في ملف `README.md` ووضع الملف في المجلد الرئيسي للمشروع.")
         st.stop()
 
     # Check if we are in the redirect phase (coming back from Google).
@@ -76,9 +77,10 @@ def authenticate():
     # If we are not in the redirect phase, show the login button.
     else:
         auth_url, _ = flow.authorization_url(prompt='consent')
-        st.title("📚 مرحباً بك في ماراثون القراءة")
-        st.write("للبدء، تحتاج إلى ربط حسابك في جوجل للسماح للتطبيق بإنشاء وإدارة جداول البيانات والنماذج الخاصة بتحديات القراءة.")
-        st.link_button("🔐 تسجيل الدخول باستخدام جوجل", auth_url, use_container_width=True)
+        # --- LINGUISTIC UPDATE ---
+        st.title("🚀 أهلاً بك في \"ماراثون القراءة\"")
+        st.info("للبدء، يرجى ربط حسابك في جوجل. سيقوم التطبيق بإنشاء مساحة عمل خاصة بك (Google Sheet و Form) لإدارة تحديات القراءة بكل سهولة.")
+        st.link_button("🔗 **الربط بحساب جوجل والبدء**", auth_url, use_container_width=True, type="primary")
         st.stop()
 
 
@@ -94,7 +96,7 @@ def get_gspread_client():
     """Uses authenticated credentials to create a gspread client."""
     creds = st.session_state.get('credentials')
     if not creds:
-        st.error("خطأ في المصادقة. لا يمكن إنشاء اتصال بجوجل.")
+        # --- LINGUISTIC UPDATE ---
+        st.error("🔒 **خطأ في المصادقة:** لم نتمكن من التحقق من صلاحيات الوصول. قد تكون هناك مشكلة في الاتصال أو أنك لم تمنح الصلاحيات اللازمة.")
         st.stop()
     return gspread.authorize(creds)
-
