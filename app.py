@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from main import run_data_update
 import auth_manager
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 import gspread
 import time
 import locale
@@ -26,6 +27,44 @@ def generate_date_options():
         arabic_day_name = arabic_days.get(english_day_name, english_day_name)
         dates.append(f"{current.strftime('%Y-%m-%d')} ({arabic_day_name})")
     return dates
+
+# --- Helper function to update Google Form ---
+def update_form_members(forms_service, form_id, question_id, active_member_names):
+    """Updates the dropdown options for the member selection question in the Google Form."""
+    if not form_id or not question_id:
+        st.error("لم يتم العثور على معرّف النموذج أو معرّف سؤال الأعضاء في الإعدادات.")
+        return False
+    
+    update_request = {
+        "requests": [
+            {
+                "updateItem": {
+                    "item": {
+                        "itemId": question_id,
+                        "questionItem": {
+                            "question": {
+                                "choiceQuestion": {
+                                    "options": [{"value": name} for name in sorted(active_member_names)]
+                                }
+                            }
+                        }
+                    },
+                    "location": {"index": 0},
+                    "updateMask": "questionItem.question.choiceQuestion.options"
+                }
+            }
+        ]
+    }
+    
+    try:
+        forms_service.forms().batchUpdate(formId=form_id, body=update_request).execute()
+        return True
+    except HttpError as e:
+        st.error(f"⚠️ فشل تحديث نموذج جوجل: {e}")
+        return False
+    except Exception as e:
+        st.error(f"حدث خطأ غير متوقع أثناء تحديث النموذج: {e}")
+        return False
 
 # --- Page Configuration ---
 st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
@@ -54,12 +93,12 @@ if not spreadsheet_url:
                 st.balloons()
                 st.rerun()
             except Exception as e:
-                st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: لم نتمكن من إنشاء جدول البيانات. قد يكون السبب مشكلة مؤقتة. الخطأ: {e}")
+                st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: {e}")
     st.stop()
 
 if not form_url:
-    st.header("👥 الخطوة 2: إضافة أعضاء فريقك")
-    st.info("قبل إنشاء نموذج التسجيل، يرجى إضافة أسماء المشاركين في التحدي (كل اسم في سطر). ستظهر هذه الأسماء تلقائياً في النموذج.")
+    st.header("👥 الخطوة 2: إضافة أعضاء فريقك وإنشاء النموذج")
+    st.info("قبل إنشاء نموذج التسجيل، يرجى إضافة أسماء المشاركين في التحدي (كل اسم في سطر).")
     all_data_for_form = db.get_all_data_for_stats()
     members_df_for_form = pd.DataFrame(all_data_for_form.get('members', []))
     if members_df_for_form.empty:
@@ -82,19 +121,35 @@ if not form_url:
                     form_result = forms_service.forms().create(body=new_form_info).execute()
                     form_id = form_result['formId']
                     date_options = generate_date_options()
-                    update_requests = {"requests": [{"updateFormInfo": {"info": {"description": "يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!"}, "updateMask": "description"}}, {"createItem": {"item": {"title": "اسمك", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": name} for name in member_names]}}}}, "location": {"index": 0}}}, {"createItem": {"item": {"title": "تاريخ القراءة", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": d} for d in date_options]}}}}, "location": {"index": 1}}}, {"createItem": {"item": {"title": "مدة قراءة الكتاب المشترك", "questionItem": {"question": {"required": True, "timeQuestion": {"duration": True}}}}, "location": {"index": 2}}}, {"createItem": {"item": {"title": "مدة قراءة كتاب آخر (إن وجد)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 3}}}, {"createItem": {"item": {"title": "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أرسلت اقتباساً من الكتاب المشترك"}, {"value": "أرسلت اقتباساً من كتاب آخر"}]}}}}, "location": {"index": 4}}}, {"createItem": {"item": {"title": "إنجازات خاصة (اختر فقط عند حدوثه لأول مرة)", "pageBreakItem": {}}, "location": {"index": 5}}}, {"createItem": {"item": {"title": "إنجازات الكتب والنقاش", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أنهيت الكتاب المشترك"}, {"value": "أنهيت كتاباً آخر"}, {"value": "حضرت جلسة النقاش"}]}}}}, "location": {"index": 6}}}]}
-                    forms_service.forms().batchUpdate(formId=form_id, body=update_requests).execute()
+                    
+                    update_requests = {"requests": [
+                        {"updateFormInfo": {"info": {"description": "يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!"}, "updateMask": "description"}},
+                        {"createItem": {"item": {"title": "اسمك", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": name} for name in member_names]}}}}, "location": {"index": 0}}},
+                        {"createItem": {"item": {"title": "تاريخ القراءة", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": d} for d in date_options]}}}}, "location": {"index": 1}}},
+                        {"createItem": {"item": {"title": "مدة قراءة الكتاب المشترك", "questionItem": {"question": {"required": True, "timeQuestion": {"duration": True}}}}, "location": {"index": 2}}},
+                        {"createItem": {"item": {"title": "مدة قراءة كتاب آخر (إن وجد)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 3}}},
+                        {"createItem": {"item": {"title": "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أرسلت اقتباساً من الكتاب المشترك"}, {"value": "أرسلت اقتباساً من كتاب آخر"}]}}}}, "location": {"index": 4}}},
+                        {"createItem": {"item": {"title": "إنجازات خاصة (اختر فقط عند حدوثه لأول مرة)", "pageBreakItem": {}}, "location": {"index": 5}}},
+                        {"createItem": {"item": {"title": "إنجازات الكتب والنقاش", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أنهيت الكتاب المشترك"}, {"value": "أنهيت كتاباً آخر"}, {"value": "حضرت جلسة النقاش"}]}}}}, "location": {"index": 6}}}
+                    ]}
+                    
+                    update_result = forms_service.forms().batchUpdate(formId=form_id, body=update_requests).execute()
+                    
+                    member_question_id = update_result['replies'][1]['createItem']['itemId']
+                    db.set_setting("form_id", form_id)
+                    db.set_setting("member_question_id", member_question_id)
                     db.set_setting("form_url", form_result['responderUri'])
+                    
                     with st.spinner("تتم مزامنة الملف مع Google Drive..."): time.sleep(7)
-                    st.success("✅ تم إنشاء النموذج بنجاح!")
+                    st.success("✅ تم إنشاء النموذج وحفظ معرّفاته بنجاح!")
                     st.info("🔗 الخطوة 3: الربط النهائي (تتم يدوياً)")
                     editor_url = f"https://docs.google.com/forms/d/{form_id}/edit"
-                    st.write("1. **افتح النموذج للتعديل** من الرابط الصحيح والمضمون أدناه:")
+                    st.write("1. **افتح النموذج للتعديل** من الرابط أدناه:")
                     st.code(editor_url)
-                    st.write("2. انتقل إلى تبويب **\"الردود\" (Responses)** داخل النموذج.")
-                    st.write("3. اضغط على أيقونة جدول البيانات الأخضر **'Link to Sheets'**.")
-                    st.write("4. اختر **'Select existing spreadsheet'** وقم باختيار الجدول الذي يحمل نفس الاسم.")
-                    if st.button("لقد قمت بربط النموذج، تابع إلى الخطوة الأخيرة!"):
+                    st.write("2. انتقل إلى تبويب **\"الردود\" (Responses)**.")
+                    st.write("3. اضغط على أيقونة **'Link to Sheets'**.")
+                    st.write("4. اختر **'Select existing spreadsheet'** وقم باختيار الجدول الذي أنشأته.")
+                    if st.button("لقد قمت بالربط، تابع!"):
                         with st.spinner("جاري تنظيف جدول البيانات..."):
                             try:
                                 spreadsheet = gc.open_by_url(spreadsheet_url)
@@ -104,7 +159,7 @@ if not form_url:
                             except Exception as e: st.warning(f"لم نتمكن من حذف الصفحة الفارغة تلقائياً: {e}.")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: لم نتمكن من إنشاء النموذج. قد يكون السبب مشكلة مؤقتة. الخطأ: {e}")
+                    st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: {e}")
     st.stop()
 
 # --- 3. Main Application Interface ---
@@ -142,14 +197,14 @@ if not setup_complete:
                 book_info = {'title': st.session_state.book_title, 'author': st.session_state.book_author, 'year': st.session_state.pub_year}
                 challenge_info = {'start_date': str(st.session_state.start_date), 'end_date': str(st.session_state.end_date)}
                 db.add_book_and_challenge(book_info, challenge_info)
-                st.success("🎉 اكتمل الإعداد! تم إنشاء أول تحدي بنجاح. التطبيق جاهز الآن لاستقبال تسجيلات فريقك.")
+                st.success("🎉 اكتمل الإعداد! تم إنشاء أول تحدي بنجاح.")
                 st.balloons()
                 st.rerun()
             else:
-                st.error("✏️ بيانات غير مكتملة: يرجى إدخال عنوان الكتاب واسم المؤلف للمتابعة.")
+                st.error("✏️ بيانات غير مكتملة: يرجى إدخال عنوان الكتاب واسم المؤلف.")
     st.stop()
 
-# --- Main Dashboard Section ---
+# --- Main App Pages ---
 st.sidebar.title("التنقل")
 page_options = ["لوحة التحكم", "مستكشف البيانات", "⚙️ الإدارة والتحكم", "إعدادات التحدي والنقاط"]
 page = st.sidebar.radio("اختر صفحة لعرضها:", page_options, key="navigation")
@@ -163,6 +218,8 @@ if not member_stats_df.empty and not members_df.empty:
 
 if page == "لوحة التحكم":
     st.header("📊 لوحة التحكم الرئيسية")
+    # Dashboard logic remains the same, it will show all members regardless of status
+    # ... (The entire dashboard code is here, unchanged)
     challenge_options = {period['period_id']: f"{period['title']} ({period['start_date']} to {period['end_date']})" for index, period in periods_df.iterrows()}
     if not challenge_options:
         st.info("لا توجد تحديات حالية. يمكنك إضافة تحدي جديد من صفحة 'الإدارة والتحكم'.")
@@ -205,7 +262,7 @@ if page == "لوحة التحكم":
         
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("إجمالي ساعات القراءة", f"{total_minutes / 60:.1f} ساعة")
-        kpi2.metric("الأعضاء النشطون", f"{active_members_count} عضو")
+        kpi2.metric("الأعضاء المشاركون", f"{active_members_count} عضو")
         kpi3.metric("إجمالي الاقتباسات", f"{int(total_quotes)} اقتباس")
         kpi4.metric("حضور جلسة النقاش", f"{meetings_attended_count} عضو")
         kpi5.metric("متوسط القراءة اليومي للعضو", f"{avg_daily_reading:.1f} دقيقة")
@@ -269,21 +326,25 @@ if page == "لوحة التحكم":
         if member_stats_df.empty:
             st.info("لا توجد إحصائيات لعرضها. الرجاء الضغط على زر التحديث لمزامنة البيانات.")
         else:
+            # Filter for active members for streak calculations
+            active_member_ids = members_df[members_df['is_active'] == 1]['member_id'].tolist()
+            active_member_stats_df = member_stats_df[member_stats_df['member_id'].isin(active_member_ids)]
+
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("الغياب عن تسجيل القراءة")
-                inactive_loggers = member_stats_df[member_stats_df['log_streak'] > 0][['name', 'log_streak']].sort_values('log_streak', ascending=False)
+                inactive_loggers = active_member_stats_df[active_member_stats_df['log_streak'] > 0][['name', 'log_streak']].sort_values('log_streak', ascending=False)
                 if not inactive_loggers.empty:
                     st.dataframe(inactive_loggers.rename(columns={'name': 'الاسم', 'log_streak': 'أيام الغياب'}), use_container_width=True, hide_index=True)
                 else:
-                    st.success("✅ جميع الأعضاء ملتزمون بتسجيل قراءتهم. عمل رائع!")
+                    st.success("✅ جميع الأعضاء النشطين ملتزمون بتسجيل قراءتهم. عمل رائع!")
             with col2:
                 st.subheader("الغياب عن إرسال الاقتباسات")
-                inactive_quoters = member_stats_df[member_stats_df['quote_streak'] > 0][['name', 'quote_streak']].sort_values('quote_streak', ascending=False)
+                inactive_quoters = active_member_stats_df[active_member_stats_df['quote_streak'] > 0][['name', 'quote_streak']].sort_values('quote_streak', ascending=False)
                 if not inactive_quoters.empty:
                     st.dataframe(inactive_quoters.rename(columns={'name': 'الاسم', 'quote_streak': 'أيام بلا اقتباس'}), use_container_width=True, hide_index=True)
                 else:
-                    st.success("✅ جميع الأعضاء ملتزمون بإرسال الاقتباسات. ممتاز!")
+                    st.success("✅ جميع الأعضاء النشطين ملتزمون بإرسال الاقتباسات. ممتاز!")
     
     with tab4:
         st.subheader("🔎 تحليل الأداء الفردي: بطاقة القارئ")
@@ -319,7 +380,8 @@ if page == "لوحة التحكم":
 
 elif page == "مستكشف البيانات":
     st.header("🔬 مستكشف البيانات")
-    st.info("هذه الصفحة تتيح لك استعراض البيانات الخام في قاعدة البيانات مباشرة للتأكد من صحتها.")
+    st.info("هذه الصفحة تتيح لك استعراض البيانات الخام في قاعدة البيانات مباشرة.")
+    # ... (Data Explorer code is here, unchanged)
     st.subheader("ملخص قاعدة البيانات")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric("👥 عدد الأعضاء", f"{len(members_df)} عضو")
@@ -354,7 +416,83 @@ elif page == "مستكشف البيانات":
 
 elif page == "⚙️ الإدارة والتحكم":
     st.header("✨ لوحة التحكم الإدارية")
+    
+    # --- Member Management ---
+    st.subheader("👥 إدارة المشاركين")
+    
+    # Add new member form
+    with st.form("add_member_form"):
+        new_member_name = st.text_input("اسم العضو الجديد")
+        submitted = st.form_submit_button("➕ إضافة أو إعادة تنشيط عضو")
+        if submitted and new_member_name:
+            with st.spinner(f"جاري إضافة {new_member_name}..."):
+                status_code, message = db.add_single_member(new_member_name.strip())
+                if status_code in ['added', 'reactivated']:
+                    st.success(message)
+                    # Update Google Form
+                    all_members = db.get_table_as_df('Members')
+                    active_members = all_members[all_members['is_active'] == 1]['name'].tolist()
+                    form_id = db.get_setting('form_id')
+                    question_id = db.get_setting('member_question_id')
+                    if update_form_members(forms_service, form_id, question_id, active_members):
+                        st.info("✅ تم تحديث نموذج جوجل بنجاح.")
+                    st.rerun()
+                elif status_code == 'exists':
+                    st.warning(message)
+                else:
+                    st.error(message)
+
+    st.divider()
+
+    # Display Active and Inactive members
+    all_members_df = db.get_table_as_df('Members')
+    active_members_df = all_members_df[all_members_df['is_active'] == 1]
+    inactive_members_df = all_members_df[all_members_df['is_active'] == 0]
+
+    # Active Members List
+    st.subheader(f"✅ الأعضاء النشطون ({len(active_members_df)})")
+    if not active_members_df.empty:
+        for index, member in active_members_df.iterrows():
+            col1, col2 = st.columns([4, 1])
+            col1.write(member['name'])
+            if col2.button("🚫 تعطيل", key=f"deactivate_{member['member_id']}", use_container_width=True):
+                with st.spinner(f"جاري تعطيل {member['name']}..."):
+                    db.set_member_status(member['member_id'], 0)
+                    # Update Google Form
+                    updated_active_members = active_members_df[active_members_df['member_id'] != member['member_id']]['name'].tolist()
+                    form_id = db.get_setting('form_id')
+                    question_id = db.get_setting('member_question_id')
+                    if update_form_members(forms_service, form_id, question_id, updated_active_members):
+                        st.success(f"تم تعطيل {member['name']} وإزالته من نموذج التسجيل.")
+                    st.rerun()
+    else:
+        st.info("لا يوجد أعضاء نشطون حالياً.")
+
+    # Inactive Members List
+    st.subheader(f"_ أرشيف الأعضاء ({len(inactive_members_df)})")
+    if not inactive_members_df.empty:
+        for index, member in inactive_members_df.iterrows():
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"_{member['name']}_")
+            if col2.button("🔄 إعادة تنشيط", key=f"reactivate_{member['member_id']}", use_container_width=True):
+                 with st.spinner(f"جاري إعادة تنشيط {member['name']}..."):
+                    db.set_member_status(member['member_id'], 1)
+                    # Update Google Form
+                    current_active_names = active_members_df['name'].tolist()
+                    current_active_names.append(member['name'])
+                    form_id = db.get_setting('form_id')
+                    question_id = db.get_setting('member_question_id')
+                    if update_form_members(forms_service, form_id, question_id, current_active_names):
+                        st.success(f"تم إعادة تنشيط {member['name']} وإضافته إلى نموذج التسجيل.")
+                    st.rerun()
+    else:
+        st.info("لا يوجد أعضاء في الأرشيف.")
+
+    st.divider()
+
+    # --- Challenge Management ---
     st.subheader("📅 إدارة تحديات القراءة")
+    # ... (Challenge management code is here, unchanged)
     today_str = str(date.today())
     active_period_id = None
     if not periods_df.empty:
@@ -401,21 +539,8 @@ elif page == "⚙️ الإدارة والتحكم":
                     challenge_info = {'start_date': str(new_start), 'end_date': str(new_end)}
                     if db.add_book_and_challenge(book_info, challenge_info):
                         st.success(f"✅ تمت الإضافة بنجاح! تحدي قراءة كتاب \"{new_title}\" جاهز الآن."); st.rerun()
-    st.divider()
-    st.subheader("👥 إدارة المشاركين")
-    st.warning("⚠️ تنبيه هام: حذف عضو هو إجراء نهائي سيؤدي إلى مسح جميع سجلاته وإنجازاته ونقاطه بشكل دائم.")
-    cols = st.columns((4, 1))
-    cols[0].write("**اسم العضو**")
-    cols[1].write("**إجراء**")
-    all_members_df = db.get_table_as_df('Members')
-    for index, member in all_members_df.iterrows():
-        col1, col2 = st.columns((4, 1))
-        col1.write(member['name'])
-        if col2.button("🗑️ حذف", key=f"delete_member_{member['member_id']}", use_container_width=True):
-            st.session_state['member_to_delete'] = member['member_id']
-            st.session_state['member_delete_confirmation_phrase'] = f"أوافق على حذف {member['name']}"
     if 'challenge_to_delete' in st.session_state:
-        @st.experimental_dialog("🚫 تأكيد الحذف النهائي (لا يمكن التراجع)")
+        @st.dialog("🚫 تأكيد الحذف النهائي (لا يمكن التراجع)")
         def show_challenge_delete_dialog():
             st.warning("☢️ إجراء لا يمكن التراجع عنه: أنت على وشك حذف التحدي وكل ما يتعلق به من إنجازات وإحصائيات.")
             confirmation_phrase = st.session_state['delete_confirmation_phrase']
@@ -427,22 +552,10 @@ elif page == "⚙️ الإدارة والتحكم":
             if st.button("إلغاء"):
                 del st.session_state['challenge_to_delete']; st.rerun()
         show_challenge_delete_dialog()
-    if 'member_to_delete' in st.session_state:
-        @st.experimental_dialog("🚫 تأكيد الحذف النهائي (لا يمكن التراجع)")
-        def show_member_delete_dialog():
-            st.warning("☢️ إجراء لا يمكن التراجع عنه: أنت على وشك حذف العضو وكل بياناته نهائياً.")
-            confirmation_phrase = st.session_state['member_delete_confirmation_phrase']
-            st.code(confirmation_phrase)
-            user_input = st.text_input("اكتب عبارة التأكيد هنا:", key="member_delete_input")
-            if st.button("❌ حذف العضو نهائياً", disabled=(user_input != confirmation_phrase), type="primary"):
-                if db.delete_member(st.session_state['member_to_delete']):
-                    del st.session_state['member_to_delete']; st.success("🗑️ اكتمل الحذف."); st.rerun()
-            if st.button("إلغاء"):
-                del st.session_state['member_to_delete']; st.rerun()
-        show_member_delete_dialog()
 
 elif page == "إعدادات التحدي والنقاط":
     st.header("⚙️ إعدادات التحدي والنقاط")
+    # ... (Settings page code is here, unchanged)
     st.subheader("🔗 روابط جوجل (للمرجعية)")
     st.text_input("رابط جدول البيانات (Google Sheet)", value=db.get_setting("spreadsheet_url"), disabled=True)
     st.text_input("رابط نموذج التسجيل (للمستخدمين)", value=db.get_setting("form_url"), disabled=True)
