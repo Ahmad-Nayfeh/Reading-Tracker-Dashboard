@@ -13,15 +13,10 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- NEW/UPDATED Functions for AppSettings ---
+# --- AppSettings Functions ---
 
 def set_setting(key, value):
-    """
-    Saves or updates a key-value pair in the AppSettings table.
-    This is used to store the Google Sheet and Form URLs.
-    The "INSERT OR REPLACE" command is a convenient way to handle both
-    creation of a new setting and updating an existing one.
-    """
+    """Saves or updates a key-value pair in the AppSettings table."""
     conn = get_db_connection()
     try:
         with conn:
@@ -32,10 +27,7 @@ def set_setting(key, value):
         conn.close()
 
 def get_setting(key):
-    """
-    Retrieves a value by its key from the AppSettings table.
-    Returns the value if the key is found, otherwise returns None.
-    """
+    """Retrieves a value by its key from the AppSettings table."""
     conn = get_db_connection()
     try:
         row = conn.execute("SELECT value FROM AppSettings WHERE key = ?", (key,)).fetchone()
@@ -46,8 +38,7 @@ def get_setting(key):
     finally:
         conn.close()
 
-
-# --- READ Functions (Existing, no changes needed) ---
+# --- READ Functions ---
 
 def load_global_settings():
     """Loads the general rules of the challenge (points, penalties)."""
@@ -58,11 +49,11 @@ def load_global_settings():
     finally:
         conn.close()
 
-
 def get_all_data_for_stats():
     """Fetches all data needed for the calculation engine in one go for efficiency."""
     conn = get_db_connection()
     try:
+        # Now fetches the is_active status as well
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
@@ -110,13 +101,62 @@ def did_submit_quote_today(member_id, submission_date, quote_type):
     conn.close()
     return quote_exists is not None
 
-# --- WRITE Functions (Existing, no changes needed) ---
+# --- WRITE/UPDATE Functions ---
 
 def add_members(names_list):
+    """Adds a list of new members, setting them as active by default."""
     conn = get_db_connection()
     with conn:
-        conn.executemany("INSERT INTO Members (name) VALUES (?)", [(name,) for name in names_list])
+        # Inserts only the name, relying on the default value for is_active
+        conn.executemany("INSERT OR IGNORE INTO Members (name) VALUES (?)", [(name,) for name in names_list])
     conn.close()
+
+def add_single_member(name):
+    """
+    Adds a single new member or reactivates an existing inactive one.
+    Returns a status tuple: (status_code, message)
+    - 'added': New member was added.
+    - 'reactivated': Existing member was reactivated.
+    - 'exists': Member already exists and is active.
+    - 'error': An error occurred.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            # Check if the member exists by name (case-insensitive for robustness)
+            cursor = conn.execute("SELECT member_id, is_active FROM Members WHERE name = ?", (name,))
+            member = cursor.fetchone()
+            
+            if member:
+                if member['is_active'] == 1:
+                    return ('exists', f"العضو '{name}' موجود ونشط بالفعل.")
+                else:
+                    # Reactivate the member
+                    conn.execute("UPDATE Members SET is_active = 1 WHERE member_id = ?", (member['member_id'],))
+                    return ('reactivated', f"تمت إعادة تنشيط العضو '{name}' بنجاح.")
+            else:
+                # Add a new member, who will be active by default
+                conn.execute("INSERT INTO Members (name) VALUES (?)", (name,))
+                return ('added', f"تمت إضافة العضو الجديد '{name}' بنجاح.")
+    except sqlite3.Error as e:
+        return ('error', f"Database error: {e}")
+    finally:
+        conn.close()
+
+def set_member_status(member_id, is_active: int):
+    """
+    Sets a member's status to active (1) or inactive (0).
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE Members SET is_active = ? WHERE member_id = ?", (is_active, member_id))
+        return True
+    except sqlite3.Error as e:
+        print(f"Database error in set_member_status: {e}")
+        return False
+    finally:
+        conn.close()
 
 def add_book_and_challenge(book_info, challenge_info):
     conn = get_db_connection()
@@ -176,66 +216,24 @@ def update_global_settings(settings_dict):
     finally:
         conn.close()
 
-
-# أضف هذه الدالة الجديدة إلى ملف db_manager.py
-
 def delete_challenge(period_id):
-    """
-    Deletes a challenge period and all associated data from achievements and stats.
-    Note: This does not delete ReadingLogs as they are not directly linked to a period.
-    """
+    """Deletes a challenge period and associated data."""
     conn = get_db_connection()
     try:
         with conn:
-            # First, delete associated achievements for that period
             conn.execute("DELETE FROM Achievements WHERE period_id = ?", (period_id,))
-            
-            # Second, delete associated group stats for that period
             conn.execute("DELETE FROM GroupStats WHERE period_id = ?", (period_id,))
-            
-            # Finally, delete the challenge period itself
-            # We need to get the book_id first to delete the book later if it's not used by other challenges
             cursor = conn.execute("SELECT common_book_id FROM ChallengePeriods WHERE period_id = ?", (period_id,))
             result = cursor.fetchone()
             if result:
                 book_id = result['common_book_id']
                 conn.execute("DELETE FROM ChallengePeriods WHERE period_id = ?", (period_id,))
-                
-                # Optional: Check if the book is used in any other challenges
                 cursor = conn.execute("SELECT COUNT(*) FROM ChallengePeriods WHERE common_book_id = ?", (book_id,))
                 if cursor.fetchone()[0] == 0:
-                    # If the book is not used anywhere else, delete it
                     conn.execute("DELETE FROM Books WHERE book_id = ?", (book_id,))
         return True
     except sqlite3.Error as e:
         print(f"Database error in delete_challenge: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-# أضف هذه الدالة الجديدة إلى ملف db_manager.py
-
-def delete_member(member_id):
-    """
-    Deletes a member and all their associated data (logs, achievements, stats)
-    from the database. This is a cascading delete.
-    """
-    conn = get_db_connection()
-    try:
-        with conn:
-            # The order is important due to foreign key constraints.
-            # 1. Delete from MemberStats
-            conn.execute("DELETE FROM MemberStats WHERE member_id = ?", (member_id,))
-            # 2. Delete from Achievements
-            conn.execute("DELETE FROM Achievements WHERE member_id = ?", (member_id,))
-            # 3. Delete from ReadingLogs
-            conn.execute("DELETE FROM ReadingLogs WHERE member_id = ?", (member_id,))
-            # 4. Finally, delete the member from the Members table
-            conn.execute("DELETE FROM Members WHERE member_id = ?", (member_id,))
-        return True
-    except sqlite3.Error as e:
-        print(f"Database error in delete_member: {e}")
         return False
     finally:
         conn.close()
