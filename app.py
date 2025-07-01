@@ -28,7 +28,7 @@ def generate_date_options():
     return dates
 
 # --- Page Configuration ---
-st.set_page_config(page_title="لوحة تحكم تحدي القرّاء", page_icon="📚", layout="wide")
+st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
 
 # --- 1. Main Authentication Call ---
 creds = auth_manager.authenticate()
@@ -40,8 +40,8 @@ spreadsheet_url = db.get_setting("spreadsheet_url")
 form_url = db.get_setting("form_url")
 
 if not spreadsheet_url:
-    st.header("🎉 مرحباً بك! لنقم بإعداد مساحة العمل الخاصة بك.")
-    st.info("سيقوم التطبيق الآن بإنشاء جدول بيانات (Google Sheet) جديد في حسابك لتخزين بيانات التحدي.")
+    st.header("✨ الخطوة 1: تجهيز مساحة العمل")
+    st.info("سيقوم التطبيق بإنشاء جدول بيانات (Google Sheet) في حسابك ليكون قاعدة البيانات المركزية لجميع تحديات القراءة.")
     if 'sheet_title' not in st.session_state:
         st.session_state.sheet_title = f"بيانات تحدي القراءة - {date.today().year}"
     st.session_state.sheet_title = st.text_input("اختر اسماً لجدول البيانات", value=st.session_state.sheet_title)
@@ -54,17 +54,17 @@ if not spreadsheet_url:
                 st.balloons()
                 st.rerun()
             except Exception as e:
-                st.error(f"حدث خطأ أثناء إنشاء جدول البيانات: {e}")
+                st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: لم نتمكن من إنشاء جدول البيانات. قد يكون السبب مشكلة مؤقتة. الخطأ: {e}")
     st.stop()
 
 if not form_url:
-    st.header("الخطوة التالية: إضافة الأعضاء وإنشاء نموذج التسجيل")
-    st.info("لإنشاء نموذج التسجيل، يجب أولاً إضافة أعضاء المجموعة ليظهروا في القائمة المنسدلة للأسماء.")
+    st.header("👥 الخطوة 2: إضافة أعضاء فريقك")
+    st.info("قبل إنشاء نموذج التسجيل، يرجى إضافة أسماء المشاركين في التحدي (كل اسم في سطر). ستظهر هذه الأسماء تلقائياً في النموذج.")
     all_data_for_form = db.get_all_data_for_stats()
     members_df_for_form = pd.DataFrame(all_data_for_form.get('members', []))
     if members_df_for_form.empty:
         with st.form("initial_members_form"):
-            names_str = st.text_area("أدخل أسماء أعضاء المجموعة، كل اسم في سطر جديد:", height=150, placeholder="خالد\nسارة\n...")
+            names_str = st.text_area("أدخل أسماء المشاركين (كل اسم في سطر جديد):", height=150, placeholder="خالد\nسارة\n...")
             if st.form_submit_button("إضافة الأعضاء وحفظهم", use_container_width=True):
                 names = [name.strip() for name in names_str.split('\n') if name.strip()]
                 if names:
@@ -87,11 +87,11 @@ if not form_url:
                     db.set_setting("form_url", form_result['responderUri'])
                     with st.spinner("تتم مزامنة الملف مع Google Drive..."): time.sleep(7)
                     st.success("✅ تم إنشاء النموذج بنجاح!")
-                    st.info("الخطوة الأخيرة: يجب ربط هذا النموذج بجدول البيانات الذي أنشأناه.")
+                    st.info("🔗 الخطوة 3: الربط النهائي (تتم يدوياً)")
                     editor_url = f"https://docs.google.com/forms/d/{form_id}/edit"
                     st.write("1. **افتح النموذج للتعديل** من الرابط الصحيح والمضمون أدناه:")
                     st.code(editor_url)
-                    st.write("2. اذهب إلى تبويب **'الردود' (Responses)**.")
+                    st.write("2. انتقل إلى تبويب **\"الردود\" (Responses)** داخل النموذج.")
                     st.write("3. اضغط على أيقونة جدول البيانات الأخضر **'Link to Sheets'**.")
                     st.write("4. اختر **'Select existing spreadsheet'** وقم باختيار الجدول الذي يحمل نفس الاسم.")
                     if st.button("لقد قمت بربط النموذج، تابع إلى الخطوة الأخيرة!"):
@@ -104,7 +104,7 @@ if not form_url:
                             except Exception as e: st.warning(f"لم نتمكن من حذف الصفحة الفارغة تلقائياً: {e}.")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"حدث خطأ أثناء إنشاء النموذج: {e}")
+                    st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: لم نتمكن من إنشاء النموذج. قد يكون السبب مشكلة مؤقتة. الخطأ: {e}")
     st.stop()
 
 # --- 3. Main Application Interface ---
@@ -115,7 +115,7 @@ setup_complete = not periods_df.empty
 
 st.sidebar.title("لوحة التحكم")
 st.sidebar.success(f"أهلاً بك! (تم تسجيل الدخول)")
-if st.sidebar.button("🔄 تحديث ومزامنة البيانات", type="primary", use_container_width=True):
+if st.sidebar.button("🔄 تحديث وسحب البيانات", type="primary", use_container_width=True):
     with st.spinner("جاري سحب البيانات..."):
         update_log = run_data_update(gc)
         st.session_state['update_log'] = update_log
@@ -142,16 +142,16 @@ if not setup_complete:
                 book_info = {'title': st.session_state.book_title, 'author': st.session_state.book_author, 'year': st.session_state.pub_year}
                 challenge_info = {'start_date': str(st.session_state.start_date), 'end_date': str(st.session_state.end_date)}
                 db.add_book_and_challenge(book_info, challenge_info)
-                st.success("تم إنشاء التحدي الأول بنجاح! التطبيق جاهز الآن.")
+                st.success("🎉 اكتمل الإعداد! تم إنشاء أول تحدي بنجاح. التطبيق جاهز الآن لاستقبال تسجيلات فريقك.")
                 st.balloons()
                 st.rerun()
             else:
-                st.error("الرجاء ملء عنوان الكتاب والمؤلف.")
+                st.error("✏️ بيانات غير مكتملة: يرجى إدخال عنوان الكتاب واسم المؤلف للمتابعة.")
     st.stop()
 
 # --- Main Dashboard Section ---
 st.sidebar.title("التنقل")
-page_options = ["لوحة التحكم", "مستكشف البيانات", "إدارة التحديات والأعضاء", "الإعدادات"]
+page_options = ["لوحة التحكم", "مستكشف البيانات", "⚙️ الإدارة والتحكم", "إعدادات التحدي والنقاط"]
 page = st.sidebar.radio("اختر صفحة لعرضها:", page_options, key="navigation")
 
 logs_df = pd.DataFrame(all_data.get('logs', []))
@@ -165,7 +165,7 @@ if page == "لوحة التحكم":
     st.header("📊 لوحة التحكم الرئيسية")
     challenge_options = {period['period_id']: f"{period['title']} ({period['start_date']} to {period['end_date']})" for index, period in periods_df.iterrows()}
     if not challenge_options:
-        st.info("لا توجد تحديات حالية. يمكنك إضافة تحدي جديد من صفحة 'الإدارة'.")
+        st.info("لا توجد تحديات حالية. يمكنك إضافة تحدي جديد من صفحة 'الإدارة والتحكم'.")
         st.stop()
     selected_challenge_id = st.selectbox("اختر فترة التحدي لعرضها:", options=list(challenge_options.keys()), format_func=lambda x: challenge_options[x], index=0)
     selected_period = periods_df[periods_df['period_id'] == selected_challenge_id].iloc[0]
@@ -189,10 +189,10 @@ if page == "لوحة التحكم":
         st.progress(progress, text=f"انقضى {days_passed if days_passed >= 0 else 0} يوم من أصل {days_total} يوم")
     st.divider()
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 نظرة عامة", "🏆 لوحة المتصدرين", "🔔 تنبيهات النشاط", "👤 بطاقة القارئ"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 أداء المجموعة", "🥇 منصة التتويج", "🔔 مؤشر الالتزام", "🔎 بطاقة القارئ"])
     
     with tab1:
-        st.subheader("نظرة عامة على أداء المجموعة")
+        st.subheader("📈 أداء المجموعة في أرقام")
         if not period_logs_df.empty:
             total_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum()
             active_members_count = period_logs_df['member_id'].nunique()
@@ -212,7 +212,7 @@ if page == "لوحة التحكم":
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("زخم القراءة التراكمي")
+            st.subheader("🔥 مؤشر حماس المجموعة (تراكمي)")
             if not period_logs_df.empty:
                 daily_minutes = period_logs_df.groupby('submission_date_dt')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reset_index(name='total_minutes')
                 daily_minutes = daily_minutes.sort_values('submission_date_dt')
@@ -222,7 +222,7 @@ if page == "لوحة التحكم":
             else:
                 st.info("لا توجد بيانات قراءة مسجلة لهذا التحدي بعد.")
         with col2:
-            st.subheader("توزيع القراءة الأسبوعي")
+            st.subheader("🗓️ الأيام الأكثر نشاطاً في الأسبوع")
             if not period_logs_df.empty:
                 period_logs_df['weekday'] = pd.to_datetime(period_logs_df['submission_date_dt']).dt.day_name()
                 weekday_order = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
@@ -233,19 +233,19 @@ if page == "لوحة التحكم":
                 st.info("لا توجد بيانات لرسم هذا المخطط.")
 
     with tab2:
-        st.subheader("قائمة المتصدرين والإنجازات")
+        st.subheader("🥇 منصة التتويج: المتصدرون بالنقاط")
         if member_stats_df.empty:
             st.info("لا توجد إحصائيات لعرضها. الرجاء الضغط على زر التحديث لمزامنة البيانات.")
         else:
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.subheader("🏆 المتصدرون حسب النقاط")
+                st.subheader("🏆 المتصدرون بالنقاط")
                 top_members = member_stats_df.sort_values('total_points', ascending=False)
                 fig = px.bar(top_members, y='name', x='total_points', orientation='h', title="أعلى الأعضاء نقاطاً", text_auto=True, labels={'name': 'اسم العضو', 'total_points': 'مجموع النقاط'})
                 fig.update_layout(yaxis={'categoryorder':'total ascending'})
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
-                st.subheader("🏅 أبطال الإنجازات")
+                st.subheader("🌟 نجوم التحدي")
                 if not period_achievements_df.empty and not members_df.empty:
                     common_finishers = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
                     if not common_finishers.empty:
@@ -264,7 +264,7 @@ if page == "لوحة التحكم":
                     st.info("لم يتم تسجيل أي إنجازات بعد.")
 
     with tab3:
-        st.subheader("تنبيهات حول نشاط الأعضاء")
+        st.subheader("🔔 مؤشر الالتزام (تنبيهات الغياب)")
         st.warning("هذه القوائم تظهر الأعضاء الذين تجاوزوا الحد المسموح به للغياب وقد يتم تطبيق خصومات عليهم.")
         if member_stats_df.empty:
             st.info("لا توجد إحصائيات لعرضها. الرجاء الضغط على زر التحديث لمزامنة البيانات.")
@@ -286,7 +286,7 @@ if page == "لوحة التحكم":
                     st.success("✅ جميع الأعضاء ملتزمون بإرسال الاقتباسات. ممتاز!")
     
     with tab4:
-        st.subheader("👤 بطاقة القارئ: تحليل الأداء الفردي")
+        st.subheader("🔎 تحليل الأداء الفردي: بطاقة القارئ")
         if not members_df.empty:
             member_list = members_df['name'].tolist()
             selected_member_name = st.selectbox("اختر قارئًا لعرض بطاقته:", member_list)
@@ -352,9 +352,9 @@ elif page == "مستكشف البيانات":
         st.write("#### جدول الكتب (Books)"); st.dataframe(books_df, use_container_width=True)
         st.write("#### جدول فترات التحدي (ChallengePeriods)"); st.dataframe(periods_df, use_container_width=True)
 
-elif page == "إدارة التحديات والأعضاء":
-    st.header("✨ إدارة التحديات والأعضاء")
-    st.subheader("قائمة التحديات الحالية والسابقة")
+elif page == "⚙️ الإدارة والتحكم":
+    st.header("✨ لوحة التحكم الإدارية")
+    st.subheader("📅 إدارة تحديات القراءة")
     today_str = str(date.today())
     active_period_id = None
     if not periods_df.empty:
@@ -391,19 +391,19 @@ elif page == "إدارة التحديات والأعضاء":
             new_end = st.date_input("تاريخ نهاية التحدي الجديد", value=suggested_start + timedelta(days=30))
             if st.form_submit_button("إضافة التحدي"):
                 if new_start <= last_end_date:
-                    st.error(f"خطأ: تاريخ بداية التحدي الجديد ({new_start}) يجب أن يكون بعد تاريخ نهاية آخر تحدي ({last_end_date}).")
+                    st.error(f"⛔ التواريخ متداخلة: لا يمكن بدء تحدي جديد قبل انتهاء التحدي السابق. يرجى اختيار تاريخ بداية بعد {last_end_date}.")
                 elif not new_title or not new_author:
-                    st.error("الرجاء ملء عنوان الكتاب والمؤلف.")
+                    st.error("✏️ بيانات غير مكتملة: يرجى إدخال عنوان الكتاب واسم المؤلف للمتابعة.")
                 elif new_start >= new_end:
-                    st.error("تاريخ النهاية يجب أن يكون بعد تاريخ البداية.")
+                    st.error("🗓️ خطأ في التواريخ: تاريخ نهاية التحدي يجب أن يكون بعد تاريخ بدايته.")
                 else:
                     book_info = {'title': new_title, 'author': new_author, 'year': new_year}
                     challenge_info = {'start_date': str(new_start), 'end_date': str(new_end)}
                     if db.add_book_and_challenge(book_info, challenge_info):
-                        st.success(f"تمت إضافة تحدي '{new_title}' بنجاح!"); st.rerun()
+                        st.success(f"✅ تمت الإضافة بنجاح! تحدي قراءة كتاب \"{new_title}\" جاهز الآن."); st.rerun()
     st.divider()
-    st.subheader("إدارة أعضاء المجموعة")
-    st.warning("تحذير: حذف عضو سيؤدي إلى إزالة جميع بياناته (سجلات القراءة، الإنجازات، النقاط) بشكل نهائي.")
+    st.subheader("👥 إدارة المشاركين")
+    st.warning("⚠️ تنبيه هام: حذف عضو هو إجراء نهائي سيؤدي إلى مسح جميع سجلاته وإنجازاته ونقاطه بشكل دائم.")
     cols = st.columns((4, 1))
     cols[0].write("**اسم العضو**")
     cols[1].write("**إجراء**")
@@ -415,41 +415,41 @@ elif page == "إدارة التحديات والأعضاء":
             st.session_state['member_to_delete'] = member['member_id']
             st.session_state['member_delete_confirmation_phrase'] = f"أوافق على حذف {member['name']}"
     if 'challenge_to_delete' in st.session_state:
-        @st.experimental_dialog("⚠️ تأكيد الحذف النهائي للتحدي")
+        @st.experimental_dialog("🚫 تأكيد الحذف النهائي (لا يمكن التراجع)")
         def show_challenge_delete_dialog():
-            st.warning("أنت على وشك حذف تحدي بالكامل. هذا الإجراء نهائي ولا يمكن التراجع عنه.")
+            st.warning("☢️ إجراء لا يمكن التراجع عنه: أنت على وشك حذف التحدي وكل ما يتعلق به من إنجازات وإحصائيات.")
             confirmation_phrase = st.session_state['delete_confirmation_phrase']
             st.code(confirmation_phrase)
             user_input = st.text_input("اكتب عبارة التأكيد هنا:", key="challenge_delete_input")
             if st.button("❌ حذف التحدي نهائياً", disabled=(user_input != confirmation_phrase), type="primary"):
                 if db.delete_challenge(st.session_state['challenge_to_delete']):
-                    del st.session_state['challenge_to_delete']; st.success("تم الحذف بنجاح."); st.rerun()
+                    del st.session_state['challenge_to_delete']; st.success("🗑️ اكتمل الحذف."); st.rerun()
             if st.button("إلغاء"):
                 del st.session_state['challenge_to_delete']; st.rerun()
         show_challenge_delete_dialog()
     if 'member_to_delete' in st.session_state:
-        @st.experimental_dialog("⚠️ تأكيد حذف عضو")
+        @st.experimental_dialog("🚫 تأكيد الحذف النهائي (لا يمكن التراجع)")
         def show_member_delete_dialog():
-            st.warning("أنت على وشك حذف عضو وكل بياناته نهائياً. لا يمكن التراجع عن هذا الإجراء.")
+            st.warning("☢️ إجراء لا يمكن التراجع عنه: أنت على وشك حذف العضو وكل بياناته نهائياً.")
             confirmation_phrase = st.session_state['member_delete_confirmation_phrase']
             st.code(confirmation_phrase)
             user_input = st.text_input("اكتب عبارة التأكيد هنا:", key="member_delete_input")
             if st.button("❌ حذف العضو نهائياً", disabled=(user_input != confirmation_phrase), type="primary"):
                 if db.delete_member(st.session_state['member_to_delete']):
-                    del st.session_state['member_to_delete']; st.success("تم الحذف بنجاح."); st.rerun()
+                    del st.session_state['member_to_delete']; st.success("🗑️ اكتمل الحذف."); st.rerun()
             if st.button("إلغاء"):
                 del st.session_state['member_to_delete']; st.rerun()
         show_member_delete_dialog()
 
-elif page == "الإعدادات":
-    st.header("⚙️ الإعدادات العامة")
-    st.subheader("روابط مساحة العمل")
+elif page == "إعدادات التحدي والنقاط":
+    st.header("⚙️ إعدادات التحدي والنقاط")
+    st.subheader("🔗 روابط جوجل (للمرجعية)")
     st.text_input("رابط جدول البيانات (Google Sheet)", value=db.get_setting("spreadsheet_url"), disabled=True)
     st.text_input("رابط نموذج التسجيل (للمستخدمين)", value=db.get_setting("form_url"), disabled=True)
     editor_url = (db.get_setting("form_url") or "").replace("/viewform", "/edit")
     st.text_input("رابط تعديل النموذج (للمشرف)", value=editor_url, disabled=True)
     st.divider()
-    st.subheader("قوانين اللعبة")
+    st.subheader("🎯 نظام النقاط والخصومات")
     settings = db.load_global_settings()
     if settings:
         with st.form("settings_form"):
@@ -473,6 +473,6 @@ elif page == "الإعدادات":
             if st.form_submit_button("حفظ الإعدادات", use_container_width=True):
                 new_settings = {"minutes_per_point_common": s_m_common, "minutes_per_point_other": s_m_other, "quote_common_book_points": s_q_common, "quote_other_book_points": s_q_other, "finish_common_book_points": s_f_common, "finish_other_book_points": s_f_other, "attend_discussion_points": s_a_disc, "no_log_days_trigger": s_nl_trigger, "no_log_initial_penalty": s_nl_initial, "no_log_subsequent_penalty": s_nl_subsequent, "no_quote_days_trigger": s_nq_trigger, "no_quote_initial_penalty": s_nq_initial, "no_quote_subsequent_penalty": s_nq_subsequent}
                 if db.update_global_settings(new_settings):
-                    st.success("تم تحديث الإعدادات بنجاح!")
+                    st.success("👍 تم حفظ التغييرات! تم تحديث نظام النقاط والخصومات بنجاح.")
                 else:
                     st.error("حدث خطأ أثناء تحديث الإعدادات.")
