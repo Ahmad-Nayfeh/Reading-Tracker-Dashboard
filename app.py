@@ -332,12 +332,10 @@ if page == "لوحة التحكم":
                 elif ach_type == 'ATTENDED_DISCUSSION':
                     period_points[member_id] += period_rules.get('attend_discussion_points', 0)
                 elif ach_type == 'FINISHED_OTHER_BOOK':
-                    # Validation for other books finished within the period
                     if not period_logs_df.empty:
                          member_period_logs = period_logs_df[period_logs_df['member_id'] == member_id]
                          if not member_period_logs.empty:
                              other_minutes_in_period = member_period_logs['other_book_minutes'].sum()
-                             # Simple validation: 1 book per 3 hours
                              if other_minutes_in_period >= 180:
                                 period_points[member_id] += period_rules.get('finish_other_book_points', 0)
         
@@ -347,16 +345,19 @@ if page == "لوحة التحكم":
 
     st.divider()
 
-    st.info("سيتم بناء المخططات البيانية والأقسام الجديدة هنا في الخطوات القادمة.")
-    
-    if not display_stats_df.empty:
-        st.write("### مثال: عرض إجمالي النقاط للمستخدمين")
-        if 'name' in display_stats_df.columns:
+    # REMOVED: The "Commitment Index" tab and its related logic.
+    tab1, tab2, tab3 = st.tabs(["📈 أداء المجموعة", "🥇 منصة التتويج", "🔎 بطاقة القارئ"])
+
+    with tab1:
+        st.write("محتوى أداء المجموعة سيتم بناؤه هنا.")
+    with tab2:
+        if not display_stats_df.empty:
+            st.write("### المتصدرون بالنقاط")
             st.dataframe(display_stats_df[['name', 'total_points']].sort_values('total_points', ascending=False), use_container_width=True)
         else:
-            st.warning("حدث خطأ في تجهيز البيانات للعرض.")
-    else:
-        st.warning("لا توجد بيانات إحصائية لعرضها.")
+            st.warning("لا توجد بيانات لعرضها.")
+    with tab3:
+        st.write("محتوى بطاقة القارئ سيتم بناؤه هنا.")
 
 elif page == "⚙️ الإدارة والتحكم":
     st.header("✨ لوحة التحكم الإدارية")
@@ -525,16 +526,9 @@ elif page == "⚙️ الإدارة والتحكم":
                 rules['finish_common_book_points'] = c1.number_input("نقاط إنهاء الكتاب المشترك:", value=default_settings['finish_common_book_points'], min_value=0)
                 rules['finish_other_book_points'] = c2.number_input("نقاط إنهاء كتاب آخر:", value=default_settings['finish_other_book_points'], min_value=0)
                 rules['attend_discussion_points'] = st.number_input("نقاط حضور جلسة النقاش:", value=default_settings['attend_discussion_points'], min_value=0)
-                st.divider()
-                st.write("**نظام الخصومات (أدخل 0 لإلغاء الخصم)**")
-                c3, c4 = st.columns(2)
-                rules['no_log_days_trigger'] = c3.number_input("أيام الغياب عن التسجيل لبدء الخصم:", value=default_settings['no_log_days_trigger'], min_value=0)
-                rules['no_log_initial_penalty'] = c3.number_input("قيمة الخصم الأول للغياب:", value=default_settings['no_log_initial_penalty'], min_value=0)
-                rules['no_log_subsequent_penalty'] = c3.number_input("قيمة الخصم المتكرر للغياب:", value=default_settings['no_log_subsequent_penalty'], min_value=0)
-                rules['no_quote_days_trigger'] = c4.number_input("أيام عدم إرسال اقتباس لبدء الخصم:", value=default_settings['no_quote_days_trigger'], min_value=0)
-                rules['no_quote_initial_penalty'] = c4.number_input("قيمة الخصم الأول للاقتباس:", value=default_settings['no_quote_initial_penalty'], min_value=0)
-                rules['no_quote_subsequent_penalty'] = c4.number_input("قيمة الخصم المتكرر للاقتباس:", value=default_settings['no_quote_subsequent_penalty'], min_value=0)
-
+                
+                # REMOVED: Penalty section from the form
+                
                 if st.form_submit_button("حفظ التحدي بالقوانين المخصصة"):
                     success, message = db.add_book_and_challenge(
                         st.session_state.new_challenge_data['book_info'],
@@ -574,7 +568,7 @@ elif page == "إعدادات التحدي والنقاط":
     editor_url = (db.get_setting("form_url") or "").replace("/viewform", "/edit")
     st.text_input("رابط تعديل النموذج (للمشرف)", value=editor_url, disabled=True)
     st.divider()
-    st.subheader("🎯 نظام النقاط والخصومات الافتراضي")
+    st.subheader("🎯 نظام النقاط الافتراضي")
     st.info("هذه هي القوانين الافتراضية التي سيتم تطبيقها على التحديات الجديدة التي لا يتم تخصيص قوانين لها.")
     settings = db.load_global_settings()
     if settings:
@@ -587,18 +581,17 @@ elif page == "إعدادات التحدي والنقاط":
             s_f_common = c1.number_input("نقاط إنهاء الكتاب المشترك:", value=settings['finish_common_book_points'], min_value=0)
             s_f_other = c2.number_input("نقاط إنهاء كتاب آخر:", value=settings['finish_other_book_points'], min_value=0)
             s_a_disc = st.number_input("نقاط حضور جلسة النقاش:", value=settings['attend_discussion_points'], min_value=0)
-            st.divider()
-            st.subheader("نظام الخصومات (أدخل 0 لإلغاء الخصم)")
-            c3, c4 = st.columns(2)
-            s_nl_trigger = c3.number_input("أيام الغياب عن التسجيل لبدء الخصم:", value=settings['no_log_days_trigger'], min_value=0)
-            s_nl_initial = c3.number_input("قيمة الخصم الأول للغياب:", value=settings['no_log_initial_penalty'], min_value=0)
-            s_nl_subsequent = c3.number_input("قيمة الخصم المتكرر للغياب:", value=settings['no_log_subsequent_penalty'], min_value=0)
-            s_nq_trigger = c4.number_input("أيام عدم إرسال اقتباس لبدء الخصم:", value=settings['no_quote_days_trigger'], min_value=0)
-            s_nq_initial = c4.number_input("قيمة الخصم الأول للاقتباس:", value=settings['no_quote_initial_penalty'], min_value=0)
-            s_nq_subsequent = c4.number_input("قيمة الخصم المتكرر للاقتباس:", value=settings['no_quote_subsequent_penalty'], min_value=0)
+            
+            # REMOVED: Penalty section from the settings page
+            
             if st.form_submit_button("حفظ الإعدادات الافتراضية", use_container_width=True):
-                new_settings = {"minutes_per_point_common": s_m_common, "minutes_per_point_other": s_m_other, "quote_common_book_points": s_q_common, "quote_other_book_points": s_q_other, "finish_common_book_points": s_f_common, "finish_other_book_points": s_f_other, "attend_discussion_points": s_a_disc, "no_log_days_trigger": s_nl_trigger, "no_log_initial_penalty": s_nl_initial, "no_log_subsequent_penalty": s_nl_subsequent, "no_quote_days_trigger": s_nq_trigger, "no_quote_initial_penalty": s_nq_initial, "no_quote_subsequent_penalty": s_nq_subsequent}
+                new_settings = {
+                    "minutes_per_point_common": s_m_common, "minutes_per_point_other": s_m_other,
+                    "quote_common_book_points": s_q_common, "quote_other_book_points": s_q_other,
+                    "finish_common_book_points": s_f_common, "finish_other_book_points": s_f_other,
+                    "attend_discussion_points": s_a_disc
+                }
                 if db.update_global_settings(new_settings):
-                    st.success("👍 تم حفظ التغييرات! تم تحديث نظام النقاط والخصومات الافتراضي بنجاح.")
+                    st.success("👍 تم حفظ التغييرات! تم تحديث نظام النقاط الافتراضي بنجاح.")
                 else:
                     st.error("حدث خطأ أثناء تحديث الإعدادات.")
