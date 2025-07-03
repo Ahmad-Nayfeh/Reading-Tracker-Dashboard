@@ -34,6 +34,9 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     if df.empty:
         return go.Figure().update_layout(title="لا توجد بيانات قراءة لعرضها في الخريطة")
 
+    # FIX: Create an explicit copy to avoid SettingWithCopyWarning
+    df = df.copy()
+    
     df['date'] = pd.to_datetime(df['submission_date_dt'])
     
     full_date_range = pd.to_datetime(pd.date_range(start=start_date, end=end_date, freq='D'))
@@ -57,8 +60,8 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     weekday_order_ar = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
     heatmap_data['weekday_ar'] = pd.Categorical(heatmap_data['weekday_ar'], categories=weekday_order_ar, ordered=True)
     
-    heatmap_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='minutes', aggfunc='sum').fillna(0)
-    hover_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='hover_text', aggfunc=lambda x: ' '.join(x))
+    heatmap_pivot = heatmap_data.groupby(['weekday_ar', 'week_of_year'], observed=False)['minutes'].sum().unstack(level=-1).fillna(0)
+    hover_pivot = heatmap_data.groupby(['weekday_ar', 'week_of_year'], observed=False)['hover_text'].agg(lambda x: ' '.join(x)).unstack(level=-1)
 
     month_positions = heatmap_data.drop_duplicates('month_abbr').set_index('month_abbr')
     
@@ -324,10 +327,12 @@ if page == "📈 لوحة التحكم العامة":
         last_month_end = this_month_start - timedelta(days=1)
         last_month_start = last_month_end.replace(day=1)
 
-        logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+        # FIX: Create a copy to avoid SettingWithCopyWarning
+        logs_copy = logs_df.copy()
+        logs_copy['total_minutes'] = logs_copy['common_book_minutes'] + logs_copy['other_book_minutes']
         
-        this_month_minutes = logs_df[logs_df['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
-        last_month_minutes = logs_df[(logs_df['submission_date_dt'] >= last_month_start) & (logs_df['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
+        this_month_minutes = logs_copy[logs_copy['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
+        last_month_minutes = logs_copy[(logs_copy['submission_date_dt'] >= last_month_start) & (logs_copy['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
 
         if last_month_minutes > 0:
             percentage_change = ((this_month_minutes - last_month_minutes) / last_month_minutes) * 100
@@ -421,8 +426,9 @@ if page == "📈 لوحة التحكم العامة":
         st.info("لا توجد بيانات لعرض المخططات البيانية بعد.")
     else:
         # Reading Growth Chart (Line Chart) - DAILY
-        logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
-        daily_minutes = logs_df.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
+        logs_copy = logs_df.copy()
+        logs_copy['total_minutes'] = logs_copy['common_book_minutes'] + logs_copy['other_book_minutes']
+        daily_minutes = logs_copy.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
         daily_minutes = daily_minutes.sort_values('submission_date_dt')
         daily_minutes['cumulative_minutes'] = daily_minutes['minutes'].cumsum()
         
@@ -609,13 +615,15 @@ elif page == "🎯 تحليلات التحديات":
                 st.markdown("---")
 
                 st.write("**مخطط حماس المجموعة**")
-                period_logs_df['total_minutes'] = period_logs_df['common_book_minutes'] + period_logs_df['other_book_minutes']
-                daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
+                # FIX: Create a copy to avoid SettingWithCopyWarning
+                period_logs_copy = period_logs_df.copy()
+                period_logs_copy['total_minutes'] = period_logs_copy['common_book_minutes'] + period_logs_copy['other_book_minutes']
+                daily_cumulative_minutes = period_logs_copy.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
                 
                 fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_minutes', title='مجموع دقائق القراءة التراكمي للمجموعة', labels={'submission_date_dt': 'تاريخ التحدي', 'total_minutes': 'مجموع الدقائق التراكمي'})
                 st.plotly_chart(fig_area, use_container_width=True)
 
-                heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj)
+                heatmap_fig = create_activity_heatmap(period_logs_copy, start_date_obj, end_date_obj)
                 st.plotly_chart(heatmap_fig, use_container_width=True)
 
         with tab2:
@@ -674,7 +682,8 @@ elif page == "🎯 تحليلات التحديات":
                     st.markdown("---")
 
                     st.subheader("🏅 الأوسمة والشارات")
-                    member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
+                    # FIX: Create an explicit copy to avoid SettingWithCopyWarning
+                    member_logs = period_logs_df[period_logs_df['member_id'] == member_id].copy()
                     member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id] if not period_achievements_df.empty else pd.DataFrame()
 
                     badges_unlocked = []
