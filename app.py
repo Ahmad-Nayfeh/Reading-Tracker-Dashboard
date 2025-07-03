@@ -363,14 +363,15 @@ if page == "📈 لوحة التحكم العامة":
     if logs_df.empty:
         st.info("لا توجد بيانات لعرض المخططات البيانية بعد.")
     else:
-        # Reading Growth Chart (Line Chart)
-        logs_df['month'] = logs_df['submission_date_dt'].apply(lambda x: x.strftime('%Y-%m'))
-        monthly_minutes = logs_df.groupby('month')[['common_book_minutes', 'other_book_minutes']].sum().sum(axis=1).reset_index(name='minutes')
-        monthly_minutes['cumulative_minutes'] = monthly_minutes['minutes'].cumsum()
+        # Reading Growth Chart (Line Chart) - DAILY
+        logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+        daily_minutes = logs_df.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
+        daily_minutes = daily_minutes.sort_values('submission_date_dt')
+        daily_minutes['cumulative_minutes'] = daily_minutes['minutes'].cumsum()
         
-        fig_growth = px.line(monthly_minutes, x='month', y='cumulative_minutes', 
-                             title='نمو القراءة التراكمي للمجموعة عبر الأشهر',
-                             labels={'month': 'الشهر', 'cumulative_minutes': 'مجموع الدقائق التراكمي'},
+        fig_growth = px.line(daily_minutes, x='submission_date_dt', y='cumulative_minutes', 
+                             title='نمو القراءة التراكمي للمجموعة عبر الأيام',
+                             labels={'submission_date_dt': 'التاريخ', 'cumulative_minutes': 'مجموع الدقائق التراكمي'},
                              markers=True)
         st.plotly_chart(fig_growth, use_container_width=True)
 
