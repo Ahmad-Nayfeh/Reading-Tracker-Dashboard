@@ -44,7 +44,33 @@ def create_database():
         cursor.execute("INSERT INTO GlobalSettings VALUES (1, 10, 5, 50, 25, 3, 1, 25, 3, 10, 2, 3, 5, 1);")
     
     cursor.execute("CREATE TABLE IF NOT EXISTS Books (book_id INTEGER PRIMARY KEY, title TEXT NOT NULL UNIQUE, author TEXT, publication_year INTEGER);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS ChallengePeriods (period_id INTEGER PRIMARY KEY, start_date TEXT NOT NULL, end_date TEXT NOT NULL, common_book_id INTEGER NOT NULL, FOREIGN KEY (common_book_id) REFERENCES Books (book_id));")
+    
+    # --- MODIFIED: ChallengePeriods Table ---
+    # We add all the rule columns directly here.
+    # When a new challenge is created, it will get its own copy of the rules.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ChallengePeriods (
+        period_id INTEGER PRIMARY KEY,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        common_book_id INTEGER NOT NULL,
+        minutes_per_point_common INTEGER NOT NULL, 
+        minutes_per_point_other INTEGER NOT NULL, 
+        finish_common_book_points INTEGER NOT NULL, 
+        finish_other_book_points INTEGER NOT NULL, 
+        quote_common_book_points INTEGER NOT NULL, 
+        quote_other_book_points INTEGER NOT NULL, 
+        attend_discussion_points INTEGER NOT NULL, 
+        no_log_days_trigger INTEGER NOT NULL, 
+        no_log_initial_penalty INTEGER NOT NULL, 
+        no_log_subsequent_penalty INTEGER NOT NULL, 
+        no_quote_days_trigger INTEGER NOT NULL, 
+        no_quote_initial_penalty INTEGER NOT NULL, 
+        no_quote_subsequent_penalty INTEGER NOT NULL,
+        FOREIGN KEY (common_book_id) REFERENCES Books (book_id)
+    );
+    """)
+
     cursor.execute("CREATE TABLE IF NOT EXISTS ReadingLogs (log_id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL UNIQUE, member_id INTEGER NOT NULL, submission_date TEXT NOT NULL, common_book_minutes INTEGER DEFAULT 0, other_book_minutes INTEGER DEFAULT 0, submitted_common_quote INTEGER DEFAULT 0, submitted_other_quote INTEGER DEFAULT 0, FOREIGN KEY (member_id) REFERENCES Members (member_id));")
     cursor.execute("CREATE TABLE IF NOT EXISTS Achievements (achievement_id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL, period_id INTEGER, book_id INTEGER, achievement_type TEXT NOT NULL, achievement_date TEXT NOT NULL, FOREIGN KEY (member_id) REFERENCES Members (member_id), FOREIGN KEY (period_id) REFERENCES ChallengePeriods (period_id), FOREIGN KEY (book_id) REFERENCES Books (book_id));")
 
@@ -68,11 +94,12 @@ def create_database():
     """)
     cursor.execute("CREATE TABLE IF NOT EXISTS GroupStats (period_id INTEGER PRIMARY KEY, total_group_minutes_common INTEGER DEFAULT 0, total_group_minutes_other INTEGER DEFAULT 0, total_group_quotes_common INTEGER DEFAULT 0, total_group_quotes_other INTEGER DEFAULT 0, active_members INTEGER DEFAULT 0, FOREIGN KEY (period_id) REFERENCES ChallengePeriods (period_id));")
     
+    # This table is now obsolete, so we ensure it's dropped if it exists from old versions.
     cursor.execute("DROP TABLE IF EXISTS ChallengeSpecificRules")
 
     conn.commit()
     conn.close()
-    print("\nDatabase setup complete! 'Members' table is ready for activation status.")
+    print("\nDatabase setup complete! 'ChallengePeriods' table is now updated with rule columns.")
 
 if __name__ == '__main__':
     create_database()
