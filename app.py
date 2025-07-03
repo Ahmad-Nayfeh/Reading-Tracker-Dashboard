@@ -122,6 +122,91 @@ def update_form_members(forms_service, form_id, question_id, active_member_names
         st.error(f"حدث خطأ غير متوقع أثناء تحديث النموذج: {e}")
         return False
 
+# --- Helper function for Dynamic Headline ---
+def generate_headline(logs_df, achievements_df, members_df):
+    
+    # --- FIX: Create total_minutes column at the beginning ---
+    if 'common_book_minutes' in logs_df.columns and 'other_book_minutes' in logs_df.columns:
+        logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+    else:
+        return "📚 **صفحة جديدة في ماراثوننا!** الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات."
+
+    today = date.today()
+    last_7_days_start = today - timedelta(days=6)
+    prev_7_days_start = today - timedelta(days=13)
+    prev_7_days_end = today - timedelta(days=7)
+
+    last_7_days_logs = logs_df[logs_df['submission_date_dt'] >= last_7_days_start]
+    prev_7_days_logs = logs_df[(logs_df['submission_date_dt'] >= prev_7_days_start) & (logs_df['submission_date_dt'] <= prev_7_days_end)]
+    
+    last_7_total_minutes = last_7_days_logs['total_minutes'].sum()
+    prev_7_total_minutes = prev_7_days_logs['total_minutes'].sum()
+
+    momentum_available = prev_7_total_minutes > 0
+    momentum_positive = None
+    percentage_change = 0
+    if momentum_available:
+        percentage_change = ((last_7_total_minutes - prev_7_total_minutes) / prev_7_total_minutes) * 100
+        momentum_positive = percentage_change >= 0
+
+    recent_achievements = achievements_df[achievements_df['achievement_date_dt'] >= last_7_days_start]
+    book_finishers = recent_achievements[recent_achievements['achievement_type'].isin(['FINISHED_COMMON_BOOK', 'FINISHED_OTHER_BOOK'])]
+    
+    recent_finishers_names = []
+    if not book_finishers.empty:
+        finisher_ids = book_finishers['member_id'].unique()
+        recent_finishers_names = members_df[members_df['member_id'].isin(finisher_ids)]['name'].tolist()
+
+    achievement_available = len(recent_finishers_names) > 0
+    
+    # --- FIX: Build the headline using HTML for full control ---
+    
+    # Style definitions
+    style = """
+        background-color: #f0f2f6; 
+        padding: 15px; 
+        border-radius: 10px; 
+        text-align: center; 
+        font-size: 1.1em;
+        color: #1c2833;
+    """
+    highlight_style = "color: #2980b9; font-weight: bold;"
+
+    # Building blocks
+    momentum_str = ""
+    achievement_str = ""
+
+    if momentum_available:
+        if momentum_positive:
+            momentum_str = f"🚀 الفريق في أوج حماسه! ارتفع الأداء بنسبة <span style='{highlight_style}'>{percentage_change:.0f}%</span> هذا الأسبوع"
+        else:
+            momentum_str = f"🧐 هل أخذ الفريق استراحة محارب؟ تراجع الأداء بنسبة <span style='{highlight_style}'>{abs(percentage_change):.0f}%</span> هذا الأسبوع"
+    
+    if achievement_available:
+        if len(recent_finishers_names) == 1:
+            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{recent_finishers_names[0]}</span> على إنهائه لكتابه!"
+        elif len(recent_finishers_names) == 2:
+            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{recent_finishers_names[0]} و{recent_finishers_names[1]}</span> على إنهائهما لكتبهما!"
+        else:
+            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{len(recent_finishers_names)} أبطال</span> على إنهائهم لكتبهم!"
+        
+        if not momentum_available:
+            achievement_str = f"🏁 وانطلقت شرارة التحدي! {achievement_detail} من التالي؟"
+        else:
+            achievement_str = achievement_detail
+
+    # Combine parts
+    if momentum_str and achievement_str:
+        final_text = f"{momentum_str}، {achievement_str}"
+    elif momentum_str:
+        final_text = momentum_str + "."
+    elif achievement_str:
+        final_text = achievement_str
+    else:
+        final_text = "📚 **صفحة جديدة في ماراثوننا!** الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات."
+
+    return f"<div style='{style}'>{final_text}</div>"
+
 # --- Page Configuration ---
 st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
 
@@ -282,14 +367,16 @@ if not logs_df.empty:
     logs_df['weekday_name'] = datetime_series.dt.strftime('%A')
 
 achievements_df = pd.DataFrame(all_data.get('achievements', []))
+if not achievements_df.empty:
+    achievements_df['achievement_date_dt'] = pd.to_datetime(achievements_df['achievement_date'], errors='coerce').dt.date
+    
 member_stats_df = db.get_table_as_df('MemberStats')
 if not member_stats_df.empty and not members_df.empty:
     member_stats_df = pd.merge(member_stats_df, members_df[['member_id', 'name']], on='member_id', how='left')
 
 if page == "📈 لوحة التحكم العامة":
     st.header("📈 لوحة التحكم العامة")
-    st.markdown("---")
-
+    
     # --- Data Preparation for Dashboard ---
     if not member_stats_df.empty:
         total_minutes = member_stats_df['total_reading_minutes_common'].sum() + member_stats_df['total_reading_minutes_other'].sum()
@@ -318,39 +405,21 @@ if page == "📈 لوحة التحكم العامة":
         completed_challenges_count = len(periods_df[periods_df['end_date_dt'] < today_date])
 
     total_reading_days = len(logs_df['submission_date'].unique()) if not logs_df.empty else 0
+    
+    # --- FINAL ADVANCED LAYOUT V3 ---
 
-    # --- FINAL ADVANCED LAYOUT V2 ---
+    # --- ROW 1: Headline ---
+    st.markdown("---")
+    if not logs_df.empty and not achievements_df.empty and not members_df.empty:
+        headline_html = generate_headline(logs_df.copy(), achievements_df.copy(), members_df.copy())
+        st.markdown(headline_html, unsafe_allow_html=True)
+    else:
+        st.markdown("<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>🚀 انطلق الماراثون! أهلاً بكم.</div>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    # --- ROW 1: Top-Level Info ---
+    # --- ROW 2: Control Center ---
     col1, col2 = st.columns([1, 1.5], gap="large")
     with col1:
-        st.subheader("💡 الملخص الذكي")
-        if not logs_df.empty:
-            today = date.today()
-            this_month_start = today.replace(day=1)
-            last_month_end = this_month_start - timedelta(days=1)
-            last_month_start = last_month_end.replace(day=1)
-            logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
-            this_month_minutes = logs_df[logs_df['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
-            last_month_minutes = logs_df[(logs_df['submission_date_dt'] >= last_month_start) & (logs_df['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
-            
-            summary_text = ""
-            if last_month_minutes > 0:
-                percentage_change = ((this_month_minutes - last_month_minutes) / last_month_minutes) * 100
-                if percentage_change >= 0:
-                    summary_text += f"أداء رائع! ارتفعت القراءة بنسبة **{percentage_change:.0f}%**"
-                else:
-                    summary_text += f"للملاحظة: انخفضت القراءة بنسبة **{abs(percentage_change):.0f}%**"
-            else:
-                summary_text += "🚀 بداية جديدة! هذا أول شهر لتسجيل البيانات"
-            
-            if king_of_points is not None:
-                summary_text += f"، ويتصدر **{king_of_points['name']}** الأبطال حالياً."
-            
-            st.write(summary_text)
-        else:
-            st.info("لا توجد بيانات كافية لعرض الملخص.")
-        
         st.subheader("🏆 أبطال الماراثون")
         if king_of_reading is not None:
             sub_col1, sub_col2 = st.columns(2)
@@ -367,15 +436,15 @@ if page == "📈 لوحة التحكم العامة":
         st.subheader("📊 مؤشرات الأداء الرئيسية")
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric(label="⏳ إجمالي ساعات القراءة", value=f"{total_hours:,}")
-        kpi2.metric(label="� إجمالي الكتب المنهَاة", value=f"{total_books_finished:,}")
+        kpi2.metric(label="📚 إجمالي الكتب المنهَاة", value=f"{total_books_finished:,}")
         kpi3.metric(label="✍️ إجمالي الاقتباسات", value=f"{total_quotes:,}")
         kpi4, kpi5, kpi6 = st.columns(3)
         kpi4.metric(label="👥 الأعضاء النشطون", value=f"{active_members_count}")
         kpi5.metric(label="🏁 التحديات المكتملة", value=f"{completed_challenges_count}")
         kpi6.metric(label="🗓️ أيام القراءة", value=f"{total_reading_days}")
     st.markdown("---")
-
-    # --- ROW 2: Growth and Quick Analysis ---
+    
+    # --- ROW 3: Visual Story ---
     col_growth, col_donut, col_days = st.columns([2, 1, 1], gap="large")
     with col_growth:
         st.subheader("📈 نمو القراءة التراكمي")
@@ -422,7 +491,7 @@ if page == "📈 لوحة التحكم العامة":
             st.info("لا توجد بيانات.")
     st.markdown("---")
 
-    # --- ROW 3: Leaderboards ---
+    # --- ROW 4: Leaderboards ---
     col_points, col_hours = st.columns(2, gap="large")
     with col_points:
         st.subheader("⭐ المتصدرون بالنقاط")
@@ -445,6 +514,7 @@ if page == "📈 لوحة التحكم العامة":
             st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
+
 
 elif page == "🎯 تحليلات التحديات":
     st.header("🎯 تحليلات التحديات")
