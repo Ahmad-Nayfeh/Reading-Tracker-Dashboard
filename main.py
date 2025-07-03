@@ -52,7 +52,6 @@ def process_new_data(df, all_data):
         if not timestamp or db.check_log_exists(timestamp):
             continue
         
-        # --- LOGIC FIX: Correctly parse the dropdown date format ---
         submission_date_str = str(row.get('تاريخ القراءة', '')).strip()
         try:
             date_part = submission_date_str.split(' ')[0]
@@ -68,10 +67,9 @@ def process_new_data(df, all_data):
         
         new_entries_processed += 1
         
-        # --- LOGIC FIX: Use the correct column name for quotes ---
         quote_responses = str(row.get('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)', ''))
-        common_quote_today = 1 if 'الكتاب المشترك' in quote_responses else 0
-        other_quote_today = 1 if 'كتاب آخر' in quote_responses else 0
+        common_quote_today = 1 if 'الكتاب المشترك' in quote_responses or 'أرسلت اقتباساً من الكتاب المشترك' in quote_responses else 0
+        other_quote_today = 1 if 'كتاب آخر' in quote_responses or 'أرسلت اقتباساً من كتاب آخر' in quote_responses else 0
         
         submission_date_db_format = submission_date_obj.strftime('%d/%m/%Y')
         if common_quote_today and db.did_submit_quote_today(member_id, submission_date_db_format, 'COMMON'): common_quote_today = 0
@@ -85,11 +83,10 @@ def process_new_data(df, all_data):
             "submitted_other_quote": other_quote_today,
         }
         
-        # --- LOGIC FIX: Use the correct column name for achievements ---
         achievements_to_add = []
         achievement_responses = str(row.get('إنجازات الكتب والنقاش', ''))
-        current_period = next((p for p in all_data['periods'] if p['start_date'] <= str(submission_date_obj) <= p['end_date']), None)
-        
+        current_period = next((p for p in all_data['periods'] if datetime.strptime(p['start_date'], '%Y-%m-%d').date() <= submission_date_obj <= datetime.strptime(p['end_date'], '%Y-%m-%d').date()), None)
+
         if current_period:
             period_id = current_period['period_id']
             if 'أنهيت الكتاب المشترك' in achievement_responses and not db.has_achievement(member_id, 'FINISHED_COMMON_BOOK', period_id):
@@ -102,65 +99,111 @@ def process_new_data(df, all_data):
         db.add_log_and_achievements(log_data, achievements_to_add)
     return new_entries_processed
 
+# --- CORRECTED: Added data type enforcement ---
 def calculate_and_update_stats():
-    settings = db.load_global_settings()
     all_data = db.get_all_data_for_stats()
-    if not settings or not all_data["members"]: return
+    if not all_data or not all_data.get("members"): return
     today = date.today()
-    member_stats_data = []
+
+    periods_map = {p['period_id']: p for p in all_data["periods"]}
+    logs_df = pd.DataFrame(all_data["logs"])
+    
+    # --- FIX: Enforce correct data types after reading from DB ---
+    if not logs_df.empty:
+        # Convert date column
+        logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce').dt.date
+        
+        # Convert all expected numeric columns to numbers, coercing errors to NaN and then filling with 0
+        numeric_cols = ['common_book_minutes', 'other_book_minutes', 'submitted_common_quote', 'submitted_other_quote']
+        for col in numeric_cols:
+            logs_df[col] = pd.to_numeric(logs_df[col], errors='coerce').fillna(0).astype(int)
+
+    achievements_df = pd.DataFrame(all_data["achievements"])
+    final_member_stats_data = []
+
     for member in all_data["members"]:
         member_id = member['member_id']
-        total_points = 0
-        member_logs = sorted([log for log in all_data["logs"] if log['member_id'] == member_id], key=lambda x: datetime.strptime(x['submission_date'], '%d/%m/%Y').date())
-        member_achievements = [ach for ach in all_data["achievements"] if ach['member_id'] == member_id]
         
-        total_reading_minutes_common = sum(log['common_book_minutes'] for log in member_logs)
-        total_reading_minutes_other = sum(log['other_book_minutes'] for log in member_logs)
-        common_quotes_count = sum(log['submitted_common_quote'] for log in member_logs)
-        other_quotes_count = sum(log['submitted_other_quote'] for log in member_logs)
-        total_points += (total_reading_minutes_common // settings['minutes_per_point_common']) if settings['minutes_per_point_common'] > 0 else 0
-        total_points += (total_reading_minutes_other // settings['minutes_per_point_other']) if settings['minutes_per_point_other'] > 0 else 0
-        total_points += common_quotes_count * settings['quote_common_book_points']
-        total_points += other_quotes_count * settings['quote_other_book_points']
+        member_stats = {
+            "member_id": member_id, "total_points": 0, "total_reading_minutes_common": 0, 
+            "total_reading_minutes_other": 0, "total_common_books_read": 0, 
+            "total_other_books_read": 0, "total_quotes_submitted": 0, 
+            "meetings_attended": 0, "last_log_date": None, "last_quote_date": None, 
+            "log_streak": 0, "quote_streak": 0
+        }
+
+        member_logs_df = logs_df[logs_df['member_id'] == member_id] if not logs_df.empty else pd.DataFrame()
+        member_achievements_df = achievements_df[achievements_df['member_id'] == member_id] if not achievements_df.empty else pd.DataFrame()
         
-        finished_common_count = len([a for a in member_achievements if a['achievement_type'] == 'FINISHED_COMMON_BOOK'])
-        attended_discussion_count = len([a for a in member_achievements if a['achievement_type'] == 'ATTENDED_DISCUSSION'])
-        finished_other_raw_count = len([a for a in member_achievements if a['achievement_type'] == 'FINISHED_OTHER_BOOK'])
-        valid_finished_other_count = min(finished_other_raw_count, total_reading_minutes_other // 180 if total_reading_minutes_other > 0 else 0)
-        total_points += finished_common_count * settings['finish_common_book_points']
-        total_points += valid_finished_other_count * settings['finish_other_book_points']
-        total_points += attended_discussion_count * settings['attend_discussion_points']
+        if not member_logs_df.empty:
+            for index, log in member_logs_df.iterrows():
+                log_date = log['submission_date_dt']
+                if pd.isna(log_date): continue
+
+                log_period = next((p for p in all_data['periods'] if datetime.strptime(p['start_date'], '%Y-%m-%d').date() <= log_date <= datetime.strptime(p['end_date'], '%Y-%m-%d').date()), None)
+
+                if log_period:
+                    if log_period['minutes_per_point_common'] > 0:
+                        member_stats['total_points'] += log['common_book_minutes'] // log_period['minutes_per_point_common']
+                    if log_period['minutes_per_point_other'] > 0:
+                        member_stats['total_points'] += log['other_book_minutes'] // log_period['minutes_per_point_other']
+                    
+                    member_stats['total_points'] += log['submitted_common_quote'] * log_period['quote_common_book_points']
+                    member_stats['total_points'] += log['submitted_other_quote'] * log_period['quote_other_book_points']
+
+        if not member_achievements_df.empty:
+            for index, achievement in member_achievements_df.iterrows():
+                period_id = achievement.get('period_id')
+                if period_id in periods_map:
+                    achievement_period_rules = periods_map[period_id]
+                    
+                    if achievement['achievement_type'] == 'FINISHED_COMMON_BOOK':
+                        member_stats['total_points'] += achievement_period_rules['finish_common_book_points']
+                    elif achievement['achievement_type'] == 'ATTENDED_DISCUSSION':
+                        member_stats['total_points'] += achievement_period_rules['attend_discussion_points']
         
-        log_streak = 0
-        quote_streak = 0
-        
-        # --- LOGIC FIX: Streaks and penalties are only calculated if the member has logs ---
-        if member_logs:
-            first_log_date = datetime.strptime(member_logs[0]['submission_date'], '%d/%m/%Y').date()
-            last_log_date = datetime.strptime(member_logs[-1]['submission_date'], '%d/%m/%Y').date()
-            days_since_last_log = (today - last_log_date).days
-            if days_since_last_log >= settings['no_log_days_trigger']:
-                penalty = settings['no_log_initial_penalty'] + (days_since_last_log - settings['no_log_days_trigger']) * settings['no_log_subsequent_penalty']
-                total_points -= penalty
-                log_streak = days_since_last_log
+        if not member_logs_df.empty:
+            member_stats['total_reading_minutes_common'] = int(member_logs_df['common_book_minutes'].sum())
+            member_stats['total_reading_minutes_other'] = int(member_logs_df['other_book_minutes'].sum())
+            member_stats['total_quotes_submitted'] = int(member_logs_df['submitted_common_quote'].sum() + member_logs_df['submitted_other_quote'].sum())
+            member_stats['last_log_date'] = str(member_logs_df['submission_date_dt'].max())
+            quote_logs = member_logs_df[(member_logs_df['submitted_common_quote'] == 1) | (member_logs_df['submitted_other_quote'] == 1)]
+            if not quote_logs.empty and not quote_logs['submission_date_dt'].isnull().all():
+                member_stats['last_quote_date'] = str(quote_logs['submission_date_dt'].max())
+
+        if not member_achievements_df.empty:
+            member_stats['total_common_books_read'] = len(member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK'])
+            member_stats['meetings_attended'] = len(member_achievements_df[member_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION'])
             
-            last_quote_log = next((log for log in reversed(member_logs) if log['submitted_common_quote'] or log['submitted_other_quote']), None)
-            # The start date for quote streak is the member's first log, not the challenge start.
-            last_quote_date = datetime.strptime(last_quote_log['submission_date'], '%d/%m/%Y').date() if last_quote_log else first_log_date
+            finished_other_raw_count = len(member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'])
+            valid_other_books = min(finished_other_raw_count, member_stats['total_reading_minutes_other'] // 180 if member_stats['total_reading_minutes_other'] > 0 else 0)
+            member_stats['total_other_books_read'] = valid_other_books
+
+            other_book_achievements = member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'].sort_values(by='achievement_id').head(valid_other_books)
+            for index, achievement_row in other_book_achievements.iterrows():
+                period_id = achievement_row.get('period_id')
+                if period_id in periods_map:
+                    member_stats['total_points'] += periods_map[period_id]['finish_other_book_points']
+
+        active_period = next((p for p in all_data['periods'] if datetime.strptime(p['start_date'], '%Y-%m-%d').date() <= today <= datetime.strptime(p['end_date'], '%Y-%m-%d').date()), None)
+        if active_period and member_stats['last_log_date']:
+            days_since_last_log = (today - datetime.strptime(member_stats['last_log_date'], '%Y-%m-%d').date()).days
+            if days_since_last_log >= active_period['no_log_days_trigger']:
+                penalty = active_period['no_log_initial_penalty'] + (days_since_last_log - active_period['no_log_days_trigger']) * active_period['no_log_subsequent_penalty']
+                member_stats['total_points'] -= penalty
+                member_stats['log_streak'] = days_since_last_log
+
+            if member_stats['last_quote_date']:
+                last_quote_date = datetime.strptime(member_stats['last_quote_date'], '%Y-%m-%d').date()
+            else:
+                last_quote_date = datetime.strptime(active_period['start_date'], '%Y-%m-%d').date()
+
             days_since_last_quote = (today - last_quote_date).days
-            if days_since_last_quote >= settings['no_quote_days_trigger']:
-                penalty = settings['no_quote_initial_penalty'] + (days_since_last_quote - settings['no_quote_days_trigger']) * settings['no_quote_subsequent_penalty']
-                total_points -= penalty
-                quote_streak = days_since_last_quote
+            if days_since_last_quote >= active_period['no_quote_days_trigger']:
+                penalty = active_period['no_quote_initial_penalty'] + (days_since_last_quote - active_period['no_quote_days_trigger']) * active_period['no_quote_subsequent_penalty']
+                member_stats['total_points'] -= penalty
+                member_stats['quote_streak'] = days_since_last_quote
         
-        member_stats_data.append({
-            "member_id": member_id, "total_points": total_points,
-            "total_reading_minutes_common": total_reading_minutes_common, "total_reading_minutes_other": total_reading_minutes_other,
-            "total_common_books_read": finished_common_count, "total_other_books_read": valid_finished_other_count,
-            "total_quotes_submitted": common_quotes_count + other_quotes_count, "meetings_attended": attended_discussion_count,
-            "last_log_date": str(last_log_date) if member_logs else None,
-            "last_quote_date": str(last_quote_date) if member_logs else None,
-            "log_streak": log_streak, "quote_streak": quote_streak
-        })
+        final_member_stats_data.append(member_stats)
     
-    db.rebuild_stats_tables(member_stats_data, []) # Group stats can be rebuilt later
+    db.rebuild_stats_tables(final_member_stats_data, [])
