@@ -99,21 +99,15 @@ def process_new_data(df, all_data):
         db.add_log_and_achievements(log_data, achievements_to_add)
     return new_entries_processed
 
-# --- CORRECTED: Added data type enforcement ---
 def calculate_and_update_stats():
     all_data = db.get_all_data_for_stats()
     if not all_data or not all_data.get("members"): return
-    today = date.today()
 
     periods_map = {p['period_id']: p for p in all_data["periods"]}
     logs_df = pd.DataFrame(all_data["logs"])
     
-    # --- FIX: Enforce correct data types after reading from DB ---
     if not logs_df.empty:
-        # Convert date column
         logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce').dt.date
-        
-        # Convert all expected numeric columns to numbers, coercing errors to NaN and then filling with 0
         numeric_cols = ['common_book_minutes', 'other_book_minutes', 'submitted_common_quote', 'submitted_other_quote']
         for col in numeric_cols:
             logs_df[col] = pd.to_numeric(logs_df[col], errors='coerce').fillna(0).astype(int)
@@ -124,12 +118,12 @@ def calculate_and_update_stats():
     for member in all_data["members"]:
         member_id = member['member_id']
         
+        # REMOVED: log_streak and quote_streak from the stats dictionary
         member_stats = {
             "member_id": member_id, "total_points": 0, "total_reading_minutes_common": 0, 
             "total_reading_minutes_other": 0, "total_common_books_read": 0, 
             "total_other_books_read": 0, "total_quotes_submitted": 0, 
-            "meetings_attended": 0, "last_log_date": None, "last_quote_date": None, 
-            "log_streak": 0, "quote_streak": 0
+            "meetings_attended": 0, "last_log_date": None, "last_quote_date": None
         }
 
         member_logs_df = logs_df[logs_df['member_id'] == member_id] if not logs_df.empty else pd.DataFrame()
@@ -180,29 +174,12 @@ def calculate_and_update_stats():
             member_stats['total_other_books_read'] = valid_other_books
 
             other_book_achievements = member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'].sort_values(by='achievement_id').head(valid_other_books)
-            for index, achievement_row in other_book_achievements.iterrows():
+            for _, achievement_row in other_book_achievements.iterrows():
                 period_id = achievement_row.get('period_id')
                 if period_id in periods_map:
                     member_stats['total_points'] += periods_map[period_id]['finish_other_book_points']
 
-        active_period = next((p for p in all_data['periods'] if datetime.strptime(p['start_date'], '%Y-%m-%d').date() <= today <= datetime.strptime(p['end_date'], '%Y-%m-%d').date()), None)
-        if active_period and member_stats['last_log_date']:
-            days_since_last_log = (today - datetime.strptime(member_stats['last_log_date'], '%Y-%m-%d').date()).days
-            if days_since_last_log >= active_period['no_log_days_trigger']:
-                penalty = active_period['no_log_initial_penalty'] + (days_since_last_log - active_period['no_log_days_trigger']) * active_period['no_log_subsequent_penalty']
-                member_stats['total_points'] -= penalty
-                member_stats['log_streak'] = days_since_last_log
-
-            if member_stats['last_quote_date']:
-                last_quote_date = datetime.strptime(member_stats['last_quote_date'], '%Y-%m-%d').date()
-            else:
-                last_quote_date = datetime.strptime(active_period['start_date'], '%Y-%m-%d').date()
-
-            days_since_last_quote = (today - last_quote_date).days
-            if days_since_last_quote >= active_period['no_quote_days_trigger']:
-                penalty = active_period['no_quote_initial_penalty'] + (days_since_last_quote - active_period['no_quote_days_trigger']) * active_period['no_quote_subsequent_penalty']
-                member_stats['total_points'] -= penalty
-                member_stats['quote_streak'] = days_since_last_quote
+        # REMOVED: The entire penalty calculation block has been deleted.
         
         final_member_stats_data.append(member_stats)
     
