@@ -57,6 +57,7 @@ def get_all_data_for_stats():
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
+        # --- MODIFIED: The query now fetches all columns, including the new rule columns ---
         query = "SELECT cp.*, b.title, b.author, b.publication_year FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC"
         periods = [dict(row) for row in conn.execute(query).fetchall()]
     
@@ -158,14 +159,55 @@ def set_member_status(member_id, is_active: int):
     finally:
         conn.close()
 
-def add_book_and_challenge(book_info, challenge_info):
+# --- CORRECTED: This function now consistently returns a tuple (bool, str) ---
+def add_book_and_challenge(book_info, challenge_info, rules_info):
+    """Adds a new book and a new challenge period with its specific rules."""
     conn = get_db_connection()
     try:
         with conn:
-            cursor = conn.execute("INSERT INTO Books (title, author, publication_year) VALUES (?, ?, ?)", (book_info['title'], book_info['author'], book_info['year']))
+            # Add the book first
+            cursor = conn.execute("INSERT INTO Books (title, author, publication_year) VALUES (?, ?, ?)",
+                                  (book_info['title'], book_info['author'], book_info['year']))
             book_id = cursor.lastrowid
-            conn.execute("INSERT INTO ChallengePeriods (start_date, end_date, common_book_id) VALUES (?, ?, ?)", (challenge_info['start_date'], challenge_info['end_date'], book_id))
-        return True
+
+            # Prepare the data for the new challenge period, including all rules
+            challenge_data = {
+                'start_date': challenge_info['start_date'],
+                'end_date': challenge_info['end_date'],
+                'common_book_id': book_id,
+                **rules_info  # Unpack the rules dictionary directly into the data
+            }
+            
+            # Insert the new challenge with its rules
+            conn.execute("""
+                INSERT INTO ChallengePeriods (
+                    start_date, end_date, common_book_id,
+                    minutes_per_point_common, minutes_per_point_other,
+                    finish_common_book_points, finish_other_book_points,
+                    quote_common_book_points, quote_other_book_points,
+                    attend_discussion_points, no_log_days_trigger,
+                    no_log_initial_penalty, no_log_subsequent_penalty,
+                    no_quote_days_trigger, no_quote_initial_penalty,
+                    no_quote_subsequent_penalty
+                ) VALUES (
+                    :start_date, :end_date, :common_book_id,
+                    :minutes_per_point_common, :minutes_per_point_other,
+                    :finish_common_book_points, :finish_other_book_points,
+                    :quote_common_book_points, :quote_other_book_points,
+                    :attend_discussion_points, :no_log_days_trigger,
+                    :no_log_initial_penalty, :no_log_subsequent_penalty,
+                    :no_quote_days_trigger, :no_quote_initial_penalty,
+                    :no_quote_subsequent_penalty
+                )
+            """, challenge_data)
+        # On success, return a tuple
+        return True, "تمت إضافة التحدي بنجاح."
+    except sqlite3.Error as e:
+        # On failure, also return a tuple
+        if "UNIQUE constraint failed: Books.title" in str(e):
+             return False, f"خطأ: كتاب بعنوان '{book_info['title']}' موجود بالفعل في قاعدة البيانات."
+        print(f"Database error in add_book_and_challenge: {e}")
+        return False, f"خطأ في قاعدة البيانات: {e}"
     finally:
         conn.close()
 
