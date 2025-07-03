@@ -288,7 +288,6 @@ if page == "📈 لوحة التحكم العامة":
     st.header("📈 لوحة التحكم العامة")
     st.markdown("---")
 
-    # --- Calculations for KPIs and Champions ---
     if not member_stats_df.empty:
         total_minutes = member_stats_df['total_reading_minutes_common'].sum() + member_stats_df['total_reading_minutes_other'].sum()
         total_hours = int(total_minutes // 60)
@@ -319,8 +318,32 @@ if page == "📈 لوحة التحكم العامة":
 
     # --- Page Layout ---
     st.subheader("💡 الملخص الذكي")
-    st.info("سيتم بناء هذا القسم لعرض رؤى سريعة ومقارنات ذكية.")
+    if not logs_df.empty:
+        today = date.today()
+        this_month_start = today.replace(day=1)
+        last_month_end = this_month_start - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+
+        logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+        
+        this_month_minutes = logs_df[logs_df['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
+        last_month_minutes = logs_df[(logs_df['submission_date_dt'] >= last_month_start) & (logs_df['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
+
+        if last_month_minutes > 0:
+            percentage_change = ((this_month_minutes - last_month_minutes) / last_month_minutes) * 100
+            if percentage_change > 0:
+                st.write(f"📈 أداء رائع! ارتفعت ساعات القراءة هذا الشهر بنسبة **{percentage_change:.0f}%** مقارنة بالشهر الماضي.")
+            else:
+                st.write(f"📉 للملاحظة: انخفضت ساعات القراءة هذا الشهر بنسبة **{abs(percentage_change):.0f}%** مقارنة بالشهر الماضي.")
+        else:
+            st.write("🚀 بداية جديدة! هذا هو أول شهر يتم فيه تسجيل بيانات القراءة.")
+
+        if king_of_points is not None:
+            st.write(f"⭐ يتصدر **{king_of_points['name']}** قائمة الأبطال حالياً. واصلوا القراءة والمنافسة!")
+    else:
+        st.info("لا توجد بيانات كافية لعرض الملخص الذكي بعد.")
     st.markdown("---")
+
 
     st.subheader("📊 مؤشرات الأداء الرئيسية (KPIs)")
     kpi1, kpi2, kpi3 = st.columns(3)
@@ -362,15 +385,13 @@ if page == "📈 لوحة التحكم العامة":
         # Most Engaging Book
         engaging_books = []
         for _, period in periods_df.iterrows():
-            start_date = pd.to_datetime(period['start_date']).date()
-            first_week_end = start_date + timedelta(days=7)
+            start_date_p = pd.to_datetime(period['start_date']).date()
+            first_week_end = start_date_p + timedelta(days=7)
             
-            # Filter logs for the first week of this period
-            first_week_logs = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] < first_week_end)]
+            first_week_logs = logs_df[(logs_df['submission_date_dt'] >= start_date_p) & (logs_df['submission_date_dt'] < first_week_end)]
             
             if not first_week_logs.empty:
                 total_minutes_first_week = first_week_logs['common_book_minutes'].sum()
-                # Use number of days with logs in the first week to be more accurate
                 days_with_logs = first_week_logs['submission_date_dt'].nunique()
                 avg_daily_minutes = total_minutes_first_week / days_with_logs if days_with_logs > 0 else 0
                 engaging_books.append({'title': period['title'], 'avg_minutes': avg_daily_minutes})
@@ -391,7 +412,7 @@ if page == "📈 لوحة التحكم العامة":
             avg_days_to_finish = merged_df.groupby('title')['days_to_finish'].mean().reset_index()
             marathon_book = avg_days_to_finish.loc[avg_days_to_finish['days_to_finish'].idxmax()]
             
-            st.info(f"** marathon الكتاب الماراثوني: {marathon_book['title']}**")
+            st.info(f"**🏃‍♂️ الكتاب الماراثوني: {marathon_book['title']}**")
             st.write(f"استغرق إكماله **{int(marathon_book['days_to_finish'])}** يوماً في المتوسط.")
     st.markdown("---")
 
