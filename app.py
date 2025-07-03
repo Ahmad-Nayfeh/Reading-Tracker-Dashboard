@@ -356,7 +356,43 @@ if page == "📈 لوحة التحكم العامة":
     st.markdown("---")
 
     st.subheader("📚 تحليلات الكتب")
-    st.info("سيتم بناء هذا القسم لتحليل الكتب الأكثر حماساً والأصعب.")
+    if periods_df.empty or logs_df.empty:
+        st.info("لا توجد بيانات كافية لعرض تحليلات الكتب.")
+    else:
+        # Most Engaging Book
+        engaging_books = []
+        for _, period in periods_df.iterrows():
+            start_date = pd.to_datetime(period['start_date']).date()
+            first_week_end = start_date + timedelta(days=7)
+            
+            # Filter logs for the first week of this period
+            first_week_logs = logs_df[(logs_df['submission_date_dt'] >= start_date) & (logs_df['submission_date_dt'] < first_week_end)]
+            
+            if not first_week_logs.empty:
+                total_minutes_first_week = first_week_logs['common_book_minutes'].sum()
+                # Use number of days with logs in the first week to be more accurate
+                days_with_logs = first_week_logs['submission_date_dt'].nunique()
+                avg_daily_minutes = total_minutes_first_week / days_with_logs if days_with_logs > 0 else 0
+                engaging_books.append({'title': period['title'], 'avg_minutes': avg_daily_minutes})
+
+        if engaging_books:
+            most_engaging = max(engaging_books, key=lambda x: x['avg_minutes'])
+            st.success(f"**🔥 الكتاب الأكثر حماساً: {most_engaging['title']}**")
+            st.write(f"بمعدل قراءة بلغ **{int(most_engaging['avg_minutes'])}** دقيقة يومياً في أسبوعه الأول.")
+        
+        # Marathon Book
+        finished_common_books = achievements_df[achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
+        if not finished_common_books.empty:
+            merged_df = pd.merge(finished_common_books, periods_df, on='period_id')
+            merged_df['achievement_date_dt'] = pd.to_datetime(merged_df['achievement_date'])
+            merged_df['start_date_dt'] = pd.to_datetime(merged_df['start_date'])
+            merged_df['days_to_finish'] = (merged_df['achievement_date_dt'] - merged_df['start_date_dt']).dt.days
+
+            avg_days_to_finish = merged_df.groupby('title')['days_to_finish'].mean().reset_index()
+            marathon_book = avg_days_to_finish.loc[avg_days_to_finish['days_to_finish'].idxmax()]
+            
+            st.info(f"** marathon الكتاب الماراثوني: {marathon_book['title']}**")
+            st.write(f"استغرق إكماله **{int(marathon_book['days_to_finish'])}** يوماً في المتوسط.")
     st.markdown("---")
 
     st.subheader("📈 مخططات الأداء التراكمي")
