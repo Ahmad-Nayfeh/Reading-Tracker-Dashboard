@@ -41,7 +41,7 @@ def get_setting(key):
 # --- READ Functions ---
 
 def load_global_settings():
-    """Loads the general rules of the challenge (points, penalties)."""
+    """Loads the general rules of the challenge (points only)."""
     conn = get_db_connection()
     try:
         settings_row = conn.execute("SELECT * FROM GlobalSettings WHERE setting_id = 1").fetchone()
@@ -53,11 +53,9 @@ def get_all_data_for_stats():
     """Fetches all data needed for the calculation engine in one go for efficiency."""
     conn = get_db_connection()
     try:
-        # Now fetches the is_active status as well
         members = [dict(row) for row in conn.execute("SELECT * FROM Members ORDER BY name").fetchall()]
         logs = [dict(row) for row in conn.execute("SELECT * FROM ReadingLogs").fetchall()]
         achievements = [dict(row) for row in conn.execute("SELECT * FROM Achievements").fetchall()]
-        # --- MODIFIED: The query now fetches all columns, including the new rule columns ---
         query = "SELECT cp.*, b.title, b.author, b.publication_year FROM ChallengePeriods cp JOIN Books b ON cp.common_book_id = b.book_id ORDER BY cp.start_date DESC"
         periods = [dict(row) for row in conn.execute(query).fetchall()]
     
@@ -108,7 +106,6 @@ def add_members(names_list):
     """Adds a list of new members, setting them as active by default."""
     conn = get_db_connection()
     with conn:
-        # Inserts only the name, relying on the default value for is_active
         conn.executemany("INSERT OR IGNORE INTO Members (name) VALUES (?)", [(name,) for name in names_list])
     conn.close()
 
@@ -116,15 +113,10 @@ def add_single_member(name):
     """
     Adds a single new member or reactivates an existing inactive one.
     Returns a status tuple: (status_code, message)
-    - 'added': New member was added.
-    - 'reactivated': Existing member was reactivated.
-    - 'exists': Member already exists and is active.
-    - 'error': An error occurred.
     """
     conn = get_db_connection()
     try:
         with conn:
-            # Check if the member exists by name (case-insensitive for robustness)
             cursor = conn.execute("SELECT member_id, is_active FROM Members WHERE name = ?", (name,))
             member = cursor.fetchone()
             
@@ -132,11 +124,9 @@ def add_single_member(name):
                 if member['is_active'] == 1:
                     return ('exists', f"العضو '{name}' موجود ونشط بالفعل.")
                 else:
-                    # Reactivate the member
                     conn.execute("UPDATE Members SET is_active = 1 WHERE member_id = ?", (member['member_id'],))
                     return ('reactivated', f"تمت إعادة تنشيط العضو '{name}' بنجاح.")
             else:
-                # Add a new member, who will be active by default
                 conn.execute("INSERT INTO Members (name) VALUES (?)", (name,))
                 return ('added', f"تمت إضافة العضو الجديد '{name}' بنجاح.")
     except sqlite3.Error as e:
@@ -145,9 +135,7 @@ def add_single_member(name):
         conn.close()
 
 def set_member_status(member_id, is_active: int):
-    """
-    Sets a member's status to active (1) or inactive (0).
-    """
+    """Sets a member's status to active (1) or inactive (0)."""
     conn = get_db_connection()
     try:
         with conn:
@@ -159,51 +147,40 @@ def set_member_status(member_id, is_active: int):
     finally:
         conn.close()
 
-# --- CORRECTED: This function now consistently returns a tuple (bool, str) ---
 def add_book_and_challenge(book_info, challenge_info, rules_info):
-    """Adds a new book and a new challenge period with its specific rules."""
+    """Adds a new book and a new challenge period with its specific point rules."""
     conn = get_db_connection()
     try:
         with conn:
-            # Add the book first
             cursor = conn.execute("INSERT INTO Books (title, author, publication_year) VALUES (?, ?, ?)",
                                   (book_info['title'], book_info['author'], book_info['year']))
             book_id = cursor.lastrowid
 
-            # Prepare the data for the new challenge period, including all rules
             challenge_data = {
                 'start_date': challenge_info['start_date'],
                 'end_date': challenge_info['end_date'],
                 'common_book_id': book_id,
-                **rules_info  # Unpack the rules dictionary directly into the data
+                **rules_info
             }
             
-            # Insert the new challenge with its rules
+            # REMOVED: All penalty-related columns from the INSERT statement
             conn.execute("""
                 INSERT INTO ChallengePeriods (
                     start_date, end_date, common_book_id,
                     minutes_per_point_common, minutes_per_point_other,
                     finish_common_book_points, finish_other_book_points,
                     quote_common_book_points, quote_other_book_points,
-                    attend_discussion_points, no_log_days_trigger,
-                    no_log_initial_penalty, no_log_subsequent_penalty,
-                    no_quote_days_trigger, no_quote_initial_penalty,
-                    no_quote_subsequent_penalty
+                    attend_discussion_points
                 ) VALUES (
                     :start_date, :end_date, :common_book_id,
                     :minutes_per_point_common, :minutes_per_point_other,
                     :finish_common_book_points, :finish_other_book_points,
                     :quote_common_book_points, :quote_other_book_points,
-                    :attend_discussion_points, :no_log_days_trigger,
-                    :no_log_initial_penalty, :no_log_subsequent_penalty,
-                    :no_quote_days_trigger, :no_quote_initial_penalty,
-                    :no_quote_subsequent_penalty
+                    :attend_discussion_points
                 )
             """, challenge_data)
-        # On success, return a tuple
         return True, "تمت إضافة التحدي بنجاح."
     except sqlite3.Error as e:
-        # On failure, also return a tuple
         if "UNIQUE constraint failed: Books.title" in str(e):
              return False, f"خطأ: كتاب بعنوان '{book_info['title']}' موجود بالفعل في قاعدة البيانات."
         print(f"Database error in add_book_and_challenge: {e}")
@@ -225,7 +202,20 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
         conn.execute("DELETE FROM MemberStats;")
         conn.execute("DELETE FROM GroupStats;")
         if member_stats_data:
-            conn.executemany("INSERT INTO MemberStats (member_id, total_points, total_reading_minutes_common, total_reading_minutes_other, total_common_books_read, total_other_books_read, total_quotes_submitted, meetings_attended, last_log_date, last_quote_date, log_streak, quote_streak) VALUES (:member_id, :total_points, :total_reading_minutes_common, :total_reading_minutes_other, :total_common_books_read, :total_other_books_read, :total_quotes_submitted, :meetings_attended, :last_log_date, :last_quote_date, :log_streak, :quote_streak)", member_stats_data)
+            # REMOVED: log_streak and quote_streak from the INSERT statement
+            conn.executemany("""
+                INSERT INTO MemberStats (
+                    member_id, total_points, total_reading_minutes_common, 
+                    total_reading_minutes_other, total_common_books_read, 
+                    total_other_books_read, total_quotes_submitted, 
+                    meetings_attended, last_log_date, last_quote_date
+                ) VALUES (
+                    :member_id, :total_points, :total_reading_minutes_common, 
+                    :total_reading_minutes_other, :total_common_books_read, 
+                    :total_other_books_read, :total_quotes_submitted, 
+                    :meetings_attended, :last_log_date, :last_quote_date
+                )
+            """, member_stats_data)
         if group_stats_data:
              conn.executemany("INSERT INTO GroupStats (period_id, total_group_minutes_common, total_group_minutes_other, total_group_quotes_common, total_group_quotes_other, active_members) VALUES (:period_id, :total_group_minutes_common, :total_group_minutes_other, :total_group_quotes_common, :total_group_quotes_other, :active_members)", group_stats_data)
     conn.close()
@@ -234,6 +224,7 @@ def update_global_settings(settings_dict):
     conn = get_db_connection()
     try:
         with conn:
+            # REMOVED: All penalty-related columns from the UPDATE statement
             conn.execute("""
                 UPDATE GlobalSettings
                 SET minutes_per_point_common = :minutes_per_point_common,
@@ -242,13 +233,7 @@ def update_global_settings(settings_dict):
                     finish_other_book_points = :finish_other_book_points,
                     quote_common_book_points = :quote_common_book_points,
                     quote_other_book_points = :quote_other_book_points,
-                    attend_discussion_points = :attend_discussion_points,
-                    no_log_days_trigger = :no_log_days_trigger,
-                    no_log_initial_penalty = :no_log_initial_penalty,
-                    no_log_subsequent_penalty = :no_log_subsequent_penalty,
-                    no_quote_days_trigger = :no_quote_days_trigger,
-                    no_quote_initial_penalty = :no_quote_initial_penalty,
-                    no_quote_subsequent_penalty = :no_quote_subsequent_penalty
+                    attend_discussion_points = :attend_discussion_points
                 WHERE setting_id = 1
             """, settings_dict)
         return True
