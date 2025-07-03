@@ -122,10 +122,9 @@ def update_form_members(forms_service, form_id, question_id, active_member_names
         st.error(f"حدث خطأ غير متوقع أثناء تحديث النموذج: {e}")
         return False
 
-# --- Helper function for Dynamic Headline ---
+# --- Helper function for Dynamic Headline (Overall Dashboard) ---
 def generate_headline(logs_df, achievements_df, members_df):
     
-    # --- FIX: Create total_minutes column at the beginning ---
     if 'common_book_minutes' in logs_df.columns and 'other_book_minutes' in logs_df.columns:
         logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
     else:
@@ -159,9 +158,6 @@ def generate_headline(logs_df, achievements_df, members_df):
 
     achievement_available = len(recent_finishers_names) > 0
     
-    # --- FIX: Build the headline using HTML for full control ---
-    
-    # Style definitions
     style = """
         background-color: #f0f2f6; 
         padding: 15px; 
@@ -172,7 +168,6 @@ def generate_headline(logs_df, achievements_df, members_df):
     """
     highlight_style = "color: #2980b9; font-weight: bold;"
 
-    # Building blocks
     momentum_str = ""
     achievement_str = ""
 
@@ -195,7 +190,6 @@ def generate_headline(logs_df, achievements_df, members_df):
         else:
             achievement_str = achievement_detail
 
-    # Combine parts
     if momentum_str and achievement_str:
         final_text = f"{momentum_str}، {achievement_str}"
     elif momentum_str:
@@ -206,6 +200,47 @@ def generate_headline(logs_df, achievements_df, members_df):
         final_text = "📚 **صفحة جديدة في ماراثوننا!** الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات."
 
     return f"<div style='{style}'>{final_text}</div>"
+
+# --- NEW: Helper function for Challenge Headline ---
+def generate_challenge_headline(podium_df, period_achievements_df, members_df):
+    """Generates a dynamic headline for the current challenge."""
+    parts = []
+    highlight_style = "color: #2980b9; font-weight: bold;"
+
+    # Part 1: Quotes
+    if not podium_df.empty and podium_df['quotes'].sum() > 0:
+        top_quoter = podium_df.loc[podium_df['quotes'].idxmax()]
+        parts.append(f"✍️ <span style='{highlight_style}'>{top_quoter['name']}</span> يتصدر سباق الاقتباسات")
+
+    # Part 2: Book Finishers
+    if not period_achievements_df.empty:
+        finishers = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
+        if not finishers.empty:
+            finisher_names = members_df[members_df['member_id'].isin(finishers['member_id'])]['name'].tolist()
+            if len(finisher_names) == 1:
+                parts.append(f"🎉 <span style='{highlight_style}'>{finisher_names[0]}</span> كان أول من أنهى الكتاب")
+            else:
+                parts.append(f"🎉 <span style='{highlight_style}'>{len(finisher_names)} أبطال</span> أنهوا الكتاب بنجاح")
+
+    # Part 3: Discussion Attendees
+    if not period_achievements_df.empty:
+        attendees = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']
+        if not attendees.empty:
+            parts.append(f"💬 <span style='{highlight_style}'>{len(attendees)} مشاركاً</span> أثروا جلسة النقاش")
+            
+    if not parts:
+        return "⏳ التحدي في بدايته، كل الإنجازات ممكنة!"
+
+    # Join the parts elegantly
+    if len(parts) == 1:
+        headline = parts[0] + "."
+    elif len(parts) == 2:
+        headline = f"{parts[0]}، بينما {parts[1]}."
+    else:
+        headline = f"{parts[0]}، و{parts[1]}، بالإضافة إلى {parts[2]}."
+
+    style = "background-color: #eaf2f8; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;"
+    return f"<div style='{style}'>{headline}</div>"
 
 # --- Page Configuration ---
 st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
@@ -365,6 +400,8 @@ if not logs_df.empty:
     datetime_series = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce')
     logs_df['submission_date_dt'] = datetime_series.dt.date
     logs_df['weekday_name'] = datetime_series.dt.strftime('%A')
+    # Add total minutes to logs_df for reuse
+    logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
 
 achievements_df = pd.DataFrame(all_data.get('achievements', []))
 if not achievements_df.empty:
@@ -377,7 +414,6 @@ if not member_stats_df.empty and not members_df.empty:
 if page == "📈 لوحة التحكم العامة":
     st.header("📈 لوحة التحكم العامة")
     
-    # --- Data Preparation for Dashboard ---
     if not member_stats_df.empty:
         total_minutes = member_stats_df['total_reading_minutes_common'].sum() + member_stats_df['total_reading_minutes_other'].sum()
         total_hours = int(total_minutes // 60)
@@ -406,9 +442,6 @@ if page == "📈 لوحة التحكم العامة":
 
     total_reading_days = len(logs_df['submission_date'].unique()) if not logs_df.empty else 0
     
-    # --- FINAL ADVANCED LAYOUT V3 ---
-
-    # --- ROW 1: Headline ---
     st.markdown("---")
     if not logs_df.empty and not achievements_df.empty and not members_df.empty:
         headline_html = generate_headline(logs_df.copy(), achievements_df.copy(), members_df.copy())
@@ -417,7 +450,6 @@ if page == "📈 لوحة التحكم العامة":
         st.markdown("<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>🚀 انطلق الماراثون! أهلاً بكم.</div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- ROW 2: Control Center ---
     col1, col2 = st.columns([1, 1.5], gap="large")
     with col1:
         st.subheader("🏆 أبطال الماراثون")
@@ -444,12 +476,10 @@ if page == "📈 لوحة التحكم العامة":
         kpi6.metric(label="🗓️ أيام القراءة", value=f"{total_reading_days}")
     st.markdown("---")
     
-    # --- ROW 3: Visual Story ---
     col_growth, col_donut, col_days = st.columns([2, 1, 1], gap="large")
     with col_growth:
         st.subheader("📈 نمو القراءة التراكمي")
         if not logs_df.empty:
-            logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
             daily_minutes = logs_df.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
             daily_minutes = daily_minutes.sort_values('submission_date_dt')
             daily_minutes['cumulative_hours'] = daily_minutes['minutes'].cumsum() / 60
@@ -491,7 +521,6 @@ if page == "📈 لوحة التحكم العامة":
             st.info("لا توجد بيانات.")
     st.markdown("---")
 
-    # --- ROW 4: Leaderboards ---
     col_points, col_hours = st.columns(2, gap="large")
     with col_points:
         st.subheader("⭐ المتصدرون بالنقاط")
@@ -524,24 +553,17 @@ elif page == "🎯 تحليلات التحديات":
         st.stop()
     
     today = date.today()
-    
     challenge_options_map = {period['period_id']: period.to_dict() for index, period in periods_df.iterrows()}
-
     active_challenges, past_challenges, future_challenges = [], [], []
     for period_id, period_data in challenge_options_map.items():
         start_date_obj = datetime.strptime(period_data['start_date'], '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(period_data['end_date'], '%Y-%m-%d').date()
-        
-        if start_date_obj > today:
-            future_challenges.append(period_id)
-        elif end_date_obj < today:
-            past_challenges.append(period_id)
-        else:
-            active_challenges.append(period_id)
+        if start_date_obj > today: future_challenges.append(period_id)
+        elif end_date_obj < today: past_challenges.append(period_id)
+        else: active_challenges.append(period_id)
             
     future_challenges.sort(key=lambda pid: datetime.strptime(challenge_options_map[pid]['start_date'], '%Y-%m-%d').date())
     past_challenges.sort(key=lambda pid: datetime.strptime(challenge_options_map[pid]['start_date'], '%Y-%m-%d').date(), reverse=True)
-    
     sorted_option_ids = future_challenges + active_challenges + past_challenges
     
     if not sorted_option_ids:
@@ -550,12 +572,10 @@ elif page == "🎯 تحليلات التحديات":
 
     def format_challenge_option(period_id):
         period_data = challenge_options_map[period_id]
-        
         status_emoji = ""
         if period_id in active_challenges: status_emoji = " (الحالي) 🟢"
         if period_id in past_challenges: status_emoji = " (السابق) 🏁"
         if period_id in future_challenges: status_emoji = " (المقبل) ⏳"
-            
         return f"{period_data['title']} | {period_data['start_date']} إلى {period_data['end_date']}{status_emoji}"
 
     default_index = 0
@@ -571,7 +591,6 @@ elif page == "🎯 تحليلات التحديات":
         index=default_index,
         key="challenge_selector"
     )
-
     st.markdown("---")
 
     if selected_period_id:
@@ -593,200 +612,236 @@ elif page == "🎯 تحليلات التحديات":
         if not period_logs_df.empty:
             period_participants_ids = period_logs_df['member_id'].unique()
             period_members_df = members_df[members_df['member_id'].isin(period_participants_ids)]
-
             podium_data = []
             period_rules = selected_challenge_data
 
             for _, member in period_members_df.iterrows():
                 member_id = member['member_id']
                 member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
-                
                 member_achievements = pd.DataFrame()
                 if not period_achievements_df.empty:
                     member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id]
 
                 points = 0
+                common_minutes, other_minutes, common_quotes, other_quotes = 0, 0, 0, 0
                 if not member_logs.empty:
                     common_minutes = member_logs['common_book_minutes'].sum()
                     other_minutes = member_logs['other_book_minutes'].sum()
                     common_quotes = member_logs['submitted_common_quote'].sum()
                     other_quotes = member_logs['submitted_other_quote'].sum()
 
-                    if period_rules.get('minutes_per_point_common', 0) > 0:
-                        points += common_minutes // period_rules['minutes_per_point_common']
-                    if period_rules.get('minutes_per_point_other', 0) > 0:
-                        points += other_minutes // period_rules['minutes_per_point_other']
-                    
+                    if period_rules.get('minutes_per_point_common', 0) > 0: points += common_minutes // period_rules['minutes_per_point_common']
+                    if period_rules.get('minutes_per_point_other', 0) > 0: points += other_minutes // period_rules['minutes_per_point_other']
                     points += common_quotes * period_rules.get('quote_common_book_points', 0)
                     points += other_quotes * period_rules.get('quote_other_book_points', 0)
                 
                 if not member_achievements.empty:
                     for _, ach in member_achievements.iterrows():
                         ach_type = ach['achievement_type']
-                        if ach_type == 'FINISHED_COMMON_BOOK':
-                            points += period_rules.get('finish_common_book_points', 0)
-                        elif ach_type == 'ATTENDED_DISCUSSION':
-                            points += period_rules.get('attend_discussion_points', 0)
-                        elif ach_type == 'FINISHED_OTHER_BOOK':
-                            points += period_rules.get('finish_other_book_points', 0)
+                        if ach_type == 'FINISHED_COMMON_BOOK': points += period_rules.get('finish_common_book_points', 0)
+                        elif ach_type == 'ATTENDED_DISCUSSION': points += period_rules.get('attend_discussion_points', 0)
+                        elif ach_type == 'FINISHED_OTHER_BOOK': points += period_rules.get('finish_other_book_points', 0)
 
-                total_minutes = member_logs['common_book_minutes'].sum() + member_logs['other_book_minutes'].sum()
+                total_minutes = common_minutes + other_minutes
                 total_hours = total_minutes / 60
-                total_quotes = member_logs['submitted_common_quote'].sum() + member_logs['submitted_other_quote'].sum()
+                total_quotes = common_quotes + other_quotes
 
-                podium_data.append({
-                    'member_id': member_id,
-                    'name': member['name'],
-                    'points': int(points),
-                    'hours': total_hours,
-                    'quotes': int(total_quotes)
-                })
+                podium_data.append({'member_id': member_id, 'name': member['name'], 'points': int(points), 'hours': total_hours, 'quotes': int(total_quotes)})
             podium_df = pd.DataFrame(podium_data)
 
-        tab1, tab2, tab3 = st.tabs(["📝 ملخص التحدي", "🥇 منصة التتويج", "🧑‍💻 بطاقة القارئ"])
+        # --- MODIFIED: Removed 'منصة التتويج' tab ---
+        tab1, tab2 = st.tabs(["📝 ملخص التحدي", "🧑‍💻 بطاقة القارئ"])
 
         with tab1:
             if period_logs_df.empty:
                 st.info("لا توجد بيانات مسجلة لهذا التحدي بعد.")
             else:
-                st.write("**مؤشر التقدم**")
-                total_days = (end_date_obj - start_date_obj).days
-                days_passed = (today - start_date_obj).days if today > start_date_obj else 0
-                progress = min(1.0, days_passed / total_days if total_days > 0 else 0)
-                st.progress(progress, text=f"انقضى {days_passed} يوم من أصل {total_days} يوم")
+                # --- ROW 1: Dynamic Headline ---
+                st.markdown(generate_challenge_headline(podium_df, period_achievements_df, members_df), unsafe_allow_html=True)
                 st.markdown("---")
 
-                total_period_minutes = period_logs_df['common_book_minutes'].sum() + period_logs_df['other_book_minutes'].sum()
-                total_period_hours = int(total_period_minutes // 60)
-                
-                active_participants = period_logs_df['member_id'].nunique()
-                avg_daily_reading = (total_period_minutes / days_passed / active_participants) if days_passed > 0 and active_participants > 0 else 0
-                
-                total_period_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
+                # --- ROW 2: Gauge Chart & KPIs ---
+                col1, col2 = st.columns([1, 1.5], gap="large")
+                with col1:
+                    st.subheader("مؤشر التقدم")
+                    total_days = (end_date_obj - start_date_obj).days if end_date_obj > start_date_obj else 1
+                    days_passed = (today - start_date_obj).days if today >= start_date_obj else 0
+                    progress = min(1.0, days_passed / total_days if total_days > 0 else 0) * 100
+                    
+                    fig_gauge = go.Figure(go.Indicator(
+                        mode="gauge+number",
+                        value=progress,
+                        title={'text': f"انقضى {days_passed} من {total_days} يوم"},
+                        gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#2980b9"}}
+                    ))
+                    fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+                    st.plotly_chart(fig_gauge, use_container_width=True)
 
-                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-                kpi1.metric("⏳ مجموع ساعات القراءة", f"{total_period_hours:,}")
-                kpi2.metric("👥 المشاركون الفعليون", f"{active_participants}")
-                kpi3.metric("✍️ الاقتباسات المرسلة", f"{total_period_quotes}")
-                kpi4.metric("📊 متوسط القراءة اليومي/عضو", f"{avg_daily_reading:.1f} دقيقة")
+                with col2:
+                    st.subheader("مؤشرات الأداء الرئيسية")
+                    total_period_minutes = period_logs_df['total_minutes'].sum()
+                    total_period_hours = int(total_period_minutes // 60)
+                    active_participants = period_logs_df['member_id'].nunique()
+                    avg_daily_reading = (total_period_minutes / days_passed / active_participants) if days_passed > 0 and active_participants > 0 else 0
+                    total_period_quotes = period_logs_df['submitted_common_quote'].sum() + period_logs_df['submitted_other_quote'].sum()
+
+                    kpi1, kpi2 = st.columns(2)
+                    kpi1.metric("⏳ مجموع ساعات القراءة", f"{total_period_hours:,}")
+                    kpi2.metric("👥 المشاركون الفعليون", f"{active_participants}")
+                    kpi3, kpi4 = st.columns(2)
+                    kpi3.metric("✍️ الاقتباسات المرسلة", f"{total_period_quotes}")
+                    kpi4.metric("📊 متوسط القراءة اليومي/عضو", f"{avg_daily_reading:.1f} دقيقة")
                 st.markdown("---")
 
-                st.write("**مخطط حماس المجموعة**")
-                period_logs_df['total_minutes'] = period_logs_df['common_book_minutes'] + period_logs_df['other_book_minutes']
-                daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
-                
-                fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_minutes', title='مجموع دقائق القراءة التراكمي للمجموعة', labels={'submission_date_dt': 'تاريخ التحدي', 'total_minutes': 'مجموع الدقائق التراكمي'})
-                st.plotly_chart(fig_area, use_container_width=True)
+                # --- ROW 3: Cumulative Hours & Heatmap ---
+                col3, col4 = st.columns(2, gap="large")
+                with col3:
+                    st.subheader("مجموع ساعات القراءة التراكمي")
+                    daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
+                    daily_cumulative_minutes['total_hours'] = daily_cumulative_minutes['total_minutes'] / 60
+                    fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_hours', title='', labels={'submission_date_dt': 'تاريخ التحدي', 'total_hours': 'مجموع الساعات التراكمي'})
+                    st.plotly_chart(fig_area, use_container_width=True)
 
-                heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj)
-                st.plotly_chart(heatmap_fig, use_container_width=True)
-
-        with tab2:
-            if podium_df.empty:
-                st.info("لا توجد بيانات مسجلة لهذا التحدي بعد لعرض منصة التتويج.")
-            else:
-                st.subheader("🏆 متصدرو النقاط")
-                points_chart_df = podium_df.sort_values('points', ascending=False).head(10)
-                fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', 
-                                    title="أعلى 10 أعضاء في النقاط",
-                                    labels={'points': 'مجموع النقاط', 'name': 'اسم العضو'},
-                                    text='points')
-                fig_points.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_points, use_container_width=True)
-
+                with col4:
+                    st.subheader("خريطة الالتزام الحرارية")
+                    heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj, title_text="")
+                    st.plotly_chart(heatmap_fig, use_container_width=True)
                 st.markdown("---")
 
-                st.subheader("⏳ متصدرو القراءة")
-                hours_chart_df = podium_df.sort_values('hours', ascending=False).head(10)
-                fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h',
-                                   title="أعلى 10 أعضاء في ساعات القراءة",
-                                   labels={'hours': 'مجموع ساعات القراءة', 'name': 'اسم العضو'},
-                                   text='hours')
-                fig_hours.update_traces(texttemplate='%{text:.1f}')
-                fig_hours.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_hours, use_container_width=True)
+                # --- ROW 4: New Bar Charts ---
+                col5, col6 = st.columns(2, gap="large")
+                with col5:
+                    st.subheader("ساعات قراءة الأعضاء")
+                    hours_chart_df = podium_df.sort_values('hours', ascending=False).head(10)
+                    fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع ساعات القراءة', 'name': ''}, text='hours')
+                    fig_hours.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+                    fig_hours.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_hours, use_container_width=True)
 
-                st.markdown("---")
+                with col6:
+                    st.subheader("نقاط الأعضاء")
+                    points_chart_df = podium_df.sort_values('points', ascending=False).head(10)
+                    fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', title="", labels={'points': 'مجموع النقاط', 'name': ''}, text='points')
+                    fig_points.update_traces(textposition='outside')
+                    fig_points.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_points, use_container_width=True)
 
-                st.subheader("✍️ متصدرو الاقتباسات")
-                quotes_chart_df = podium_df.sort_values('quotes', ascending=False).head(10)
-                fig_quotes = px.bar(quotes_chart_df, x='quotes', y='name', orientation='h',
-                                    title="أعلى 10 أعضاء في إرسال الاقتباسات",
-                                    labels={'quotes': 'مجموع الاقتباسات', 'name': 'اسم العضو'},
-                                    text='quotes')
-                fig_quotes.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_quotes, use_container_width=True)
 
-        with tab3:
+        with tab2: # --- بطاقة القارئ ---
             if podium_df.empty:
                 st.info("لا يوجد مشاركون في هذا التحدي بعد.")
             else:
+                # ROW 1: Member selection
                 member_names = sorted(podium_df['name'].tolist())
                 selected_member_name = st.selectbox("اختر قارئاً لعرض بطاقته:", member_names)
+                st.markdown("---")
 
                 if selected_member_name:
                     member_data = podium_df[podium_df['name'] == selected_member_name].iloc[0]
                     member_id = member_data['member_id']
                     
-                    st.subheader(f"بطاقة أداء: {selected_member_name}")
+                    # ROW 2: KPIs, Badges, Achievements
+                    col1, col2, col3 = st.columns(3, gap="large")
+                    
+                    with col1:
+                        st.subheader("📊 مؤشرات الأداء")
+                        st.metric("⭐ النقاط", f"{member_data['points']}")
+                        st.metric("⏳ ساعات القراءة", f"{member_data['hours']:.1f}")
+                        st.metric("✍️ الاقتباسات", f"{member_data['quotes']}")
+                    
+                    with col2:
+                        st.subheader("🏅 الأوسمة والشارات")
+                        member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
+                        member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id] if not period_achievements_df.empty else pd.DataFrame()
 
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("⭐ النقاط", f"{member_data['points']}")
-                    c2.metric("⏳ ساعات القراءة", f"{member_data['hours']:.1f}")
-                    c3.metric("✍️ الاقتباسات", f"{member_data['quotes']}")
-                    st.markdown("---")
-
-                    st.subheader("🏅 الأوسمة والشارات")
-                    member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
-                    member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id] if not period_achievements_df.empty else pd.DataFrame()
-
-                    badges_unlocked = []
-                    if member_data['quotes'] > 10:
-                        badges_unlocked.append("✍️ **وسام الفيلسوف:** إرسال أكثر من 10 اقتباسات.")
-                    if not member_achievements.empty:
-                        finish_common_ach = member_achievements[member_achievements['achievement_type'] == 'FINISHED_COMMON_BOOK']
-                        if not finish_common_ach.empty:
-                            finish_date = pd.to_datetime(finish_common_ach.iloc[0]['achievement_date']).date()
-                            if (finish_date - start_date_obj).days <= 7:
-                                badges_unlocked.append("🏃‍♂️ **وسام العدّاء:** إنهاء الكتاب في الأسبوع الأول.")
-                    if not member_logs.empty:
-                        log_dates = sorted(member_logs['submission_date_dt'].unique())
-                        if len(log_dates) >= 7:
-                            max_streak = 0
-                            current_streak = 1
-                            for i in range(1, len(log_dates)):
-                                if (log_dates[i] - log_dates[i-1]).days == 1:
-                                    current_streak += 1
-                                else:
-                                    max_streak = max(max_streak, current_streak)
+                        badges_unlocked = []
+                        if member_data['quotes'] > 10: badges_unlocked.append("✍️ **وسام الفيلسوف:** إرسال أكثر من 10 اقتباسات.")
+                        if not member_achievements.empty:
+                            finish_common_ach = member_achievements[member_achievements['achievement_type'] == 'FINISHED_COMMON_BOOK']
+                            if not finish_common_ach.empty:
+                                finish_date = pd.to_datetime(finish_common_ach.iloc[0]['achievement_date']).date()
+                                if (finish_date - start_date_obj).days <= 7: badges_unlocked.append("🏃‍♂️ **وسام العدّاء:** إنهاء الكتاب في الأسبوع الأول.")
+                        if not member_logs.empty:
+                            log_dates = sorted(member_logs['submission_date_dt'].unique())
+                            if len(log_dates) >= 7:
+                                max_streak, current_streak = 0, 0
+                                if log_dates:
                                     current_streak = 1
-                            max_streak = max(max_streak, current_streak)
-                            if max_streak >= 7:
-                                badges_unlocked.append(f"💯 **وسام المثابرة:** القراءة لـ {max_streak} أيام متتالية.")
-                    
-                    if badges_unlocked:
-                        for badge in badges_unlocked:
-                            st.success(badge)
-                    else:
-                        st.info("لم يحصل هذا القارئ على أي أوسمة في هذا التحدي بعد.")
-                    st.markdown("---")
+                                    max_streak = 1
+                                    for i in range(1, len(log_dates)):
+                                        if (log_dates[i] - log_dates[i-1]).days == 1: current_streak += 1
+                                        else: max_streak = max(max_streak, current_streak); current_streak = 1
+                                    max_streak = max(max_streak, current_streak)
+                                if max_streak >= 7: badges_unlocked.append(f"💯 **وسام المثابرة:** القراءة لـ {max_streak} أيام متتالية.")
+                        
+                        if badges_unlocked:
+                            for badge in badges_unlocked: st.success(badge)
+                        else:
+                            st.info("لا توجد أوسمة بعد.")
 
-                    st.subheader("🎯 الإنجازات")
-                    if not member_achievements.empty:
-                        achievement_map = {
-                            'FINISHED_COMMON_BOOK': 'إنهاء الكتاب المشترك',
-                            'ATTENDED_DISCUSSION': 'حضور جلسة النقاش',
-                            'FINISHED_OTHER_BOOK': 'إنهاء كتاب آخر'
-                        }
-                        for _, ach in member_achievements.iterrows():
-                            st.markdown(f"- **{achievement_map.get(ach['achievement_type'], ach['achievement_type'])}** (بتاريخ: {ach['achievement_date']})")
-                    else:
-                        st.info("لم يحقق هذا القارئ أي إنجازات في هذا التحدي بعد.")
+                    with col3:
+                        st.subheader("🎯 الإنجازات")
+                        if not member_achievements.empty:
+                            achievement_map = {'FINISHED_COMMON_BOOK': 'إنهاء الكتاب المشترك', 'ATTENDED_DISCUSSION': 'حضور جلسة النقاش', 'FINISHED_OTHER_BOOK': 'إنهاء كتاب آخر'}
+                            for _, ach in member_achievements.iterrows():
+                                st.markdown(f"- **{achievement_map.get(ach['achievement_type'], ach['achievement_type'])}**")
+                        else:
+                            st.info("لا توجد إنجازات بعد.")
+
                     st.markdown("---")
                     
-                    member_logs['total_minutes'] = member_logs['common_book_minutes'] + member_logs['other_book_minutes']
-                    individual_heatmap = create_activity_heatmap(member_logs, start_date_obj, end_date_obj, title_text=f"خريطة التزام: {selected_member_name}")
-                    st.plotly_chart(individual_heatmap, use_container_width=True)
+                    # ROW 3: Heatmap & Points Donut Chart
+                    col4, col5 = st.columns(2, gap="large")
+
+                    with col4:
+                        st.subheader(f"خريطة التزام: {selected_member_name}")
+                        individual_heatmap = create_activity_heatmap(member_logs, start_date_obj, end_date_obj, title_text="")
+                        st.plotly_chart(individual_heatmap, use_container_width=True)
+
+                    with col5:
+                        st.subheader("مصادر النقاط")
+                        period_rules = selected_challenge_data
+                        points_source = {}
+
+                        # Calculate points from reading
+                        common_minutes = member_logs['common_book_minutes'].sum()
+                        other_minutes = member_logs['other_book_minutes'].sum()
+                        if period_rules.get('minutes_per_point_common', 0) > 0:
+                            points_source['قراءة الكتاب المشترك'] = (common_minutes // period_rules['minutes_per_point_common'])
+                        if period_rules.get('minutes_per_point_other', 0) > 0:
+                            points_source['قراءة كتب أخرى'] = (other_minutes // period_rules['minutes_per_point_other'])
+                        
+                        # Calculate points from quotes
+                        common_quotes = member_logs['submitted_common_quote'].sum()
+                        other_quotes = member_logs['submitted_other_quote'].sum()
+                        points_source['اقتباسات (الكتاب المشترك)'] = common_quotes * period_rules.get('quote_common_book_points', 0)
+                        points_source['اقتباسات (كتب أخرى)'] = other_quotes * period_rules.get('quote_other_book_points', 0)
+                        
+                        # Calculate points from achievements
+                        if not member_achievements.empty:
+                            for _, ach in member_achievements.iterrows():
+                                ach_type = ach['achievement_type']
+                                if ach_type == 'FINISHED_COMMON_BOOK':
+                                    points_source['إنهاء الكتاب المشترك'] = points_source.get('إنهاء الكتاب المشترك', 0) + period_rules.get('finish_common_book_points', 0)
+                                elif ach_type == 'ATTENDED_DISCUSSION':
+                                    points_source['حضور النقاش'] = points_source.get('حضور النقاش', 0) + period_rules.get('attend_discussion_points', 0)
+                                elif ach_type == 'FINISHED_OTHER_BOOK':
+                                    points_source['إنهاء كتب أخرى'] = points_source.get('إنهاء كتب أخرى', 0) + period_rules.get('finish_other_book_points', 0)
+                        
+                        # Filter out zero-point sources and create the chart
+                        points_source_filtered = {k: v for k, v in points_source.items() if v > 0}
+                        if points_source_filtered:
+                            fig_donut = go.Figure(data=[go.Pie(
+                                labels=list(points_source_filtered.keys()), 
+                                values=list(points_source_filtered.values()), 
+                                hole=.5,
+                                textinfo='label+percent',
+                                insidetextorientation='radial'
+                            )])
+                            fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+                            st.plotly_chart(fig_donut, use_container_width=True)
+                        else:
+                            st.info("لا توجد نقاط مسجلة لعرض مصادرها.")
 
     else:
         st.info("يرجى اختيار تحدي من القائمة أعلاه.")
