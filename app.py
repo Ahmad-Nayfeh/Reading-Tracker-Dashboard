@@ -157,7 +157,6 @@ def generate_headline(logs_df, achievements_df, members_df):
 
     achievement_available = len(recent_finishers_names) > 0
     
-    style = "background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;"
     highlight_style = "color: #2980b9; font-weight: bold;"
 
     momentum_str = ""
@@ -198,7 +197,7 @@ def generate_headline(logs_df, achievements_df, members_df):
     else:
         final_text = "صفحة جديدة في ماراثوننا، الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات"
 
-    return f"<div style='{style}'>{final_text}</div>"
+    return final_text
 
 # --- FINALIZED: Helper function for Challenge Headline ---
 def generate_challenge_headline(podium_df, period_achievements_df, members_df, end_date_obj):
@@ -769,16 +768,18 @@ elif page == "🎯 تحليلات التحديات":
                     member_data = podium_df[podium_df['name'] == selected_member_name].iloc[0]
                     member_id = member_data['member_id']
                     
-                    # ROW 2: KPIs, Badges, Achievements
-                    col1, col2, col3 = st.columns(3, gap="large")
+                    # --- MODIFIED: KPIs are now horizontal ---
+                    st.subheader("📊 مؤشرات الأداء")
+                    kpi_cols = st.columns(3)
+                    kpi_cols[0].metric("⭐ النقاط", f"{member_data['points']}")
+                    kpi_cols[1].metric("⏳ ساعات القراءة", f"{member_data['hours']:.1f}")
+                    kpi_cols[2].metric("✍️ الاقتباسات", f"{member_data['quotes']}")
+                    st.markdown("---")
+
+                    # ROW 2: Badges & Achievements
+                    col1, col2 = st.columns(2, gap="large")
                     
                     with col1:
-                        st.subheader("📊 مؤشرات الأداء")
-                        st.metric("⭐ النقاط", f"{member_data['points']}")
-                        st.metric("⏳ ساعات القراءة", f"{member_data['hours']:.1f}")
-                        st.metric("✍️ الاقتباسات", f"{member_data['quotes']}")
-                    
-                    with col2:
                         st.subheader("🏅 الأوسمة والشارات")
                         member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
                         member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id] if not period_achievements_df.empty else pd.DataFrame()
@@ -808,7 +809,7 @@ elif page == "🎯 تحليلات التحديات":
                         else:
                             st.info("لا توجد أوسمة بعد.")
 
-                    with col3:
+                    with col2:
                         st.subheader("🎯 الإنجازات")
                         if not member_achievements.empty:
                             achievement_map = {'FINISHED_COMMON_BOOK': 'إنهاء الكتاب المشترك', 'ATTENDED_DISCUSSION': 'حضور جلسة النقاش', 'FINISHED_OTHER_BOOK': 'إنهاء كتاب آخر'}
@@ -927,7 +928,7 @@ elif page == "⚙️ الإدارة والإعدادات":
         else:
             st.info("لا يوجد أعضاء نشطون حالياً.")
 
-        st.subheader(f"أرشيف الأعضاء ({len(inactive_members_df)})")
+        st.subheader(f"_ أرشيف الأعضاء ({len(inactive_members_df)})")
         if not inactive_members_df.empty:
             for index, member in inactive_members_df.iterrows():
                 col1, col2 = st.columns([4, 1])
@@ -1079,12 +1080,17 @@ elif page == "⚙️ الإدارة والإعدادات":
             show_challenge_delete_dialog()
 
     with admin_tab2:
-        st.subheader("🔗 روابط جوجل (للمرجعية)")
-        st.text_input("رابط جدول البيانات (Google Sheet)", value=db.get_setting("spreadsheet_url"), disabled=True)
-        st.text_input("رابط نموذج التسجيل (للمستخدمين)", value=db.get_setting("form_url"), disabled=True)
-        editor_url = (db.get_setting("form_url") or "").replace("/viewform", "/edit")
-        st.text_input("رابط تعديل النموذج (للمشرف)", value=editor_url, disabled=True)
+        # --- MODIFIED: Simplified links display ---
+        st.subheader("🔗 رابط المشاركة")
+        st.info("هذا هو الرابط الذي يمكنك مشاركته مع أعضاء الفريق لتسجيل قراءاتهم اليومية. يسهل نسخه من المربع أدناه.")
+        form_url = db.get_setting("form_url")
+        if form_url:
+            st.code(form_url)
+        else:
+            st.warning("لم يتم إنشاء رابط النموذج بعد. يرجى إكمال خطوات الإعداد في الصفحة الرئيسية.")
+        
         st.divider()
+
         st.subheader("🎯 نظام النقاط الافتراضي")
         st.info("هذه هي القوانين الافتراضية التي سيتم تطبيقها على التحديات الجديدة التي لا يتم تخصيص قوانين لها.")
         settings = db.load_global_settings()
