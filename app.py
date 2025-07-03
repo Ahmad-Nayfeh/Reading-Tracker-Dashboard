@@ -34,9 +34,6 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     if df.empty:
         return go.Figure().update_layout(title="لا توجد بيانات قراءة لعرضها في الخريطة")
 
-    # FIX: Create an explicit copy to avoid SettingWithCopyWarning
-    df = df.copy()
-    
     df['date'] = pd.to_datetime(df['submission_date_dt'])
     
     full_date_range = pd.to_datetime(pd.date_range(start=start_date, end=end_date, freq='D'))
@@ -60,8 +57,8 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     weekday_order_ar = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
     heatmap_data['weekday_ar'] = pd.Categorical(heatmap_data['weekday_ar'], categories=weekday_order_ar, ordered=True)
     
-    heatmap_pivot = heatmap_data.groupby(['weekday_ar', 'week_of_year'], observed=False)['minutes'].sum().unstack(level=-1).fillna(0)
-    hover_pivot = heatmap_data.groupby(['weekday_ar', 'week_of_year'], observed=False)['hover_text'].agg(lambda x: ' '.join(x)).unstack(level=-1)
+    heatmap_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='minutes', aggfunc='sum').fillna(0)
+    hover_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='hover_text', aggfunc=lambda x: ' '.join(x))
 
     month_positions = heatmap_data.drop_duplicates('month_abbr').set_index('month_abbr')
     
@@ -280,7 +277,9 @@ page = st.sidebar.radio("اختر صفحة لعرضها:", page_options, key="na
 # Load dataframes once
 logs_df = pd.DataFrame(all_data.get('logs', []))
 if not logs_df.empty:
-    logs_df['submission_date_dt'] = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce').dt.date
+    datetime_series = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce')
+    logs_df['submission_date_dt'] = datetime_series.dt.date
+    logs_df['weekday_name'] = datetime_series.dt.strftime('%A')
 
 achievements_df = pd.DataFrame(all_data.get('achievements', []))
 member_stats_df = db.get_table_as_df('MemberStats')
@@ -291,6 +290,7 @@ if page == "📈 لوحة التحكم العامة":
     st.header("📈 لوحة التحكم العامة")
     st.markdown("---")
 
+    # --- Data Preparation for Dashboard ---
     if not member_stats_df.empty:
         total_minutes = member_stats_df['total_reading_minutes_common'].sum() + member_stats_df['total_reading_minutes_other'].sum()
         total_hours = int(total_minutes // 60)
@@ -319,145 +319,132 @@ if page == "📈 لوحة التحكم العامة":
 
     total_reading_days = len(logs_df['submission_date'].unique()) if not logs_df.empty else 0
 
-    # --- Page Layout ---
-    st.subheader("💡 الملخص الذكي")
-    if not logs_df.empty:
-        today = date.today()
-        this_month_start = today.replace(day=1)
-        last_month_end = this_month_start - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
+    # --- FINAL ADVANCED LAYOUT V2 ---
 
-        # FIX: Create a copy to avoid SettingWithCopyWarning
-        logs_copy = logs_df.copy()
-        logs_copy['total_minutes'] = logs_copy['common_book_minutes'] + logs_copy['other_book_minutes']
-        
-        this_month_minutes = logs_copy[logs_copy['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
-        last_month_minutes = logs_copy[(logs_copy['submission_date_dt'] >= last_month_start) & (logs_copy['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
-
-        if last_month_minutes > 0:
-            percentage_change = ((this_month_minutes - last_month_minutes) / last_month_minutes) * 100
-            if percentage_change > 0:
-                st.write(f"📈 أداء رائع! ارتفعت ساعات القراءة هذا الشهر بنسبة **{percentage_change:.0f}%** مقارنة بالشهر الماضي.")
+    # --- ROW 1: Top-Level Info ---
+    col1, col2 = st.columns([1, 1.5], gap="large")
+    with col1:
+        st.subheader("💡 الملخص الذكي")
+        if not logs_df.empty:
+            today = date.today()
+            this_month_start = today.replace(day=1)
+            last_month_end = this_month_start - timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1)
+            logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+            this_month_minutes = logs_df[logs_df['submission_date_dt'] >= this_month_start]['total_minutes'].sum()
+            last_month_minutes = logs_df[(logs_df['submission_date_dt'] >= last_month_start) & (logs_df['submission_date_dt'] < this_month_start)]['total_minutes'].sum()
+            
+            summary_text = ""
+            if last_month_minutes > 0:
+                percentage_change = ((this_month_minutes - last_month_minutes) / last_month_minutes) * 100
+                if percentage_change >= 0:
+                    summary_text += f"أداء رائع! ارتفعت القراءة بنسبة **{percentage_change:.0f}%**"
+                else:
+                    summary_text += f"للملاحظة: انخفضت القراءة بنسبة **{abs(percentage_change):.0f}%**"
             else:
-                st.write(f"📉 للملاحظة: انخفضت ساعات القراءة هذا الشهر بنسبة **{abs(percentage_change):.0f}%** مقارنة بالشهر الماضي.")
+                summary_text += "🚀 بداية جديدة! هذا أول شهر لتسجيل البيانات"
+            
+            if king_of_points is not None:
+                summary_text += f"، ويتصدر **{king_of_points['name']}** الأبطال حالياً."
+            
+            st.write(summary_text)
         else:
-            st.write("🚀 بداية جديدة! هذا هو أول شهر يتم فيه تسجيل بيانات القراءة.")
-
-        if king_of_points is not None:
-            st.write(f"⭐ يتصدر **{king_of_points['name']}** قائمة الأبطال حالياً. واصلوا القراءة والمنافسة!")
-    else:
-        st.info("لا توجد بيانات كافية لعرض الملخص الذكي بعد.")
-    st.markdown("---")
-
-
-    st.subheader("📊 مؤشرات الأداء الرئيسية (KPIs)")
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric(label="⏳ إجمالي ساعات القراءة", value=f"{total_hours:,}")
-    kpi2.metric(label="📚 إجمالي الكتب المنهَاة", value=f"{total_books_finished:,}")
-    kpi3.metric(label="✍️ إجمالي الاقتباسات المرسلة", value=f"{total_quotes:,}")
-
-    kpi4, kpi5, kpi6 = st.columns(3)
-    kpi4.metric(label="👥 عدد الأعضاء النشطين", value=f"{active_members_count}")
-    kpi5.metric(label="🏁 عدد التحديات المكتملة", value=f"{completed_challenges_count}")
-    kpi6.metric(label="🗓️ عدد أيام القراءة", value=f"{total_reading_days}")
-    st.markdown("---")
-
-    st.subheader("🏆 أبطال الماراثون (All-Time Champions)")
-    if king_of_reading is not None:
-        champ1, champ2 = st.columns(2)
-        with champ1:
-            st.success(f"**👑 ملك القراءة: {king_of_reading['name']}**")
-            st.write(f"بمجموع **{int(king_of_reading['total_reading_minutes'] // 60)}** ساعة قراءة.")
-        with champ2:
-            st.success(f"**📚 ملك الكتب: {king_of_books['name']}**")
-            st.write(f"بمجموع **{int(king_of_books['total_books_read'])}** كتاب منهى.")
+            st.info("لا توجد بيانات كافية لعرض الملخص.")
         
-        champ3, champ4 = st.columns(2)
-        with champ3:
-            st.success(f"**⭐ ملك النقاط: {king_of_points['name']}**")
-            st.write(f"بمجموع **{int(king_of_points['total_points'])}** نقطة.")
-        with champ4:
-            st.success(f"**✍️ ملك الاقتباسات: {king_of_quotes['name']}**")
-            st.write(f"بمجموع **{int(king_of_quotes['total_quotes_submitted'])}** اقتباس مرسل.")
-    else:
-        st.info("لا توجد بيانات كافية لعرض الأبطال بعد.")
+        st.subheader("🏆 أبطال الماراثون")
+        if king_of_reading is not None:
+            sub_col1, sub_col2 = st.columns(2)
+            with sub_col1:
+                st.metric(label="👑 ملك القراءة", value=king_of_reading['name'])
+                st.metric(label="⭐ ملك النقاط", value=king_of_points['name'])
+            with sub_col2:
+                st.metric(label="📚 ملك الكتب", value=king_of_books['name'])
+                st.metric(label="✍️ ملك الاقتباسات", value=king_of_quotes['name'])
+        else:
+            st.info("لا أبطال بعد.")
+
+    with col2:
+        st.subheader("📊 مؤشرات الأداء الرئيسية")
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric(label="⏳ إجمالي ساعات القراءة", value=f"{total_hours:,}")
+        kpi2.metric(label="� إجمالي الكتب المنهَاة", value=f"{total_books_finished:,}")
+        kpi3.metric(label="✍️ إجمالي الاقتباسات", value=f"{total_quotes:,}")
+        kpi4, kpi5, kpi6 = st.columns(3)
+        kpi4.metric(label="👥 الأعضاء النشطون", value=f"{active_members_count}")
+        kpi5.metric(label="🏁 التحديات المكتملة", value=f"{completed_challenges_count}")
+        kpi6.metric(label="🗓️ أيام القراءة", value=f"{total_reading_days}")
     st.markdown("---")
 
-    st.subheader("📚 تحليلات الكتب")
-    if periods_df.empty or logs_df.empty:
-        st.info("لا توجد بيانات كافية لعرض تحليلات الكتب.")
-    else:
-        # Most Engaging Book
-        engaging_books = []
-        for _, period in periods_df.iterrows():
-            start_date_p = pd.to_datetime(period['start_date']).date()
-            first_week_end = start_date_p + timedelta(days=7)
+    # --- ROW 2: Growth and Quick Analysis ---
+    col_growth, col_donut, col_days = st.columns([2, 1, 1], gap="large")
+    with col_growth:
+        st.subheader("📈 نمو القراءة التراكمي")
+        if not logs_df.empty:
+            logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
+            daily_minutes = logs_df.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
+            daily_minutes = daily_minutes.sort_values('submission_date_dt')
+            daily_minutes['cumulative_hours'] = daily_minutes['minutes'].cumsum() / 60
+            fig_growth = px.area(daily_minutes, x='submission_date_dt', y='cumulative_hours', 
+                                 labels={'submission_date_dt': 'التاريخ', 'cumulative_hours': 'مجموع الساعات التراكمي'},
+                                 markers=False)
+            fig_growth.update_layout(title='', margin=dict(t=20, b=0, l=0, r=0))
+            st.plotly_chart(fig_growth, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات لعرض المخطط.")
             
-            first_week_logs = logs_df[(logs_df['submission_date_dt'] >= start_date_p) & (logs_df['submission_date_dt'] < first_week_end)]
-            
-            if not first_week_logs.empty:
-                total_minutes_first_week = first_week_logs['common_book_minutes'].sum()
-                days_with_logs = first_week_logs['submission_date_dt'].nunique()
-                avg_daily_minutes = total_minutes_first_week / days_with_logs if days_with_logs > 0 else 0
-                engaging_books.append({'title': period['title'], 'avg_minutes': avg_daily_minutes})
+    with col_donut:
+        st.subheader("🎯 تركيز القراءة")
+        if not member_stats_df.empty:
+            total_common_minutes = member_stats_df['total_reading_minutes_common'].sum()
+            total_other_minutes = member_stats_df['total_reading_minutes_other'].sum()
+            if total_common_minutes > 0 or total_other_minutes > 0:
+                donut_labels = ['الكتاب المشترك', 'الكتب الأخرى']
+                donut_values = [total_common_minutes, total_other_minutes]
+                fig_donut = go.Figure(data=[go.Pie(labels=donut_labels, values=donut_values, hole=.5)])
+                fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), annotations=[dict(text='التوزيع', x=0.5, y=0.5, font_size=14, showarrow=False)])
+                st.plotly_chart(fig_donut, use_container_width=True)
+            else:
+                st.info("لا توجد بيانات.")
+        else:
+            st.info("لا توجد بيانات.")
 
-        if engaging_books:
-            most_engaging = max(engaging_books, key=lambda x: x['avg_minutes'])
-            st.success(f"**🔥 الكتاب الأكثر حماساً: {most_engaging['title']}**")
-            st.write(f"بمعدل قراءة بلغ **{int(most_engaging['avg_minutes'])}** دقيقة يومياً في أسبوعه الأول.")
-        
-        # Marathon Book
-        finished_common_books = achievements_df[achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
-        if not finished_common_books.empty:
-            merged_df = pd.merge(finished_common_books, periods_df, on='period_id')
-            merged_df['achievement_date_dt'] = pd.to_datetime(merged_df['achievement_date'])
-            merged_df['start_date_dt'] = pd.to_datetime(merged_df['start_date'])
-            merged_df['days_to_finish'] = (merged_df['achievement_date_dt'] - merged_df['start_date_dt']).dt.days
-
-            avg_days_to_finish = merged_df.groupby('title')['days_to_finish'].mean().reset_index()
-            marathon_book = avg_days_to_finish.loc[avg_days_to_finish['days_to_finish'].idxmax()]
-            
-            st.info(f"**🏃‍♂️ الكتاب الماراثوني: {marathon_book['title']}**")
-            st.write(f"استغرق إكماله **{int(marathon_book['days_to_finish'])}** يوماً في المتوسط.")
+    with col_days:
+        st.subheader("📅 أيام النشاط")
+        if not logs_df.empty:
+            weekday_map_ar = {"Saturday": "س", "Sunday": "ح", "Monday": "ن", "Tuesday": "ث", "Wednesday": "ر", "Thursday": "خ", "Friday": "ج"}
+            logs_df['weekday_ar'] = logs_df['weekday_name'].map(weekday_map_ar)
+            weekday_order_ar = ["س", "ح", "ن", "ث", "ر", "خ", "ج"]
+            daily_activity_hours = (logs_df.groupby('weekday_ar')['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
+            fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, labels={'x': '', 'y': 'الساعات'})
+            fig_bar_days.update_layout(margin=dict(t=20, b=0, l=0, r=0), title='')
+            st.plotly_chart(fig_bar_days, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات.")
     st.markdown("---")
 
-    st.subheader("📈 مخططات الأداء التراكمي")
-    if logs_df.empty:
-        st.info("لا توجد بيانات لعرض المخططات البيانية بعد.")
-    else:
-        # Reading Growth Chart (Line Chart) - DAILY
-        logs_copy = logs_df.copy()
-        logs_copy['total_minutes'] = logs_copy['common_book_minutes'] + logs_copy['other_book_minutes']
-        daily_minutes = logs_copy.groupby('submission_date_dt')['total_minutes'].sum().reset_index(name='minutes')
-        daily_minutes = daily_minutes.sort_values('submission_date_dt')
-        daily_minutes['cumulative_minutes'] = daily_minutes['minutes'].cumsum()
-        
-        fig_growth = px.line(daily_minutes, x='submission_date_dt', y='cumulative_minutes', 
-                             title='نمو القراءة التراكمي للمجموعة عبر الأيام',
-                             labels={'submission_date_dt': 'التاريخ', 'cumulative_minutes': 'مجموع الدقائق التراكمي'},
-                             markers=True)
-        st.plotly_chart(fig_growth, use_container_width=True)
-
-        # Points Leaderboard (Bar Chart)
-        points_leaderboard = member_stats_df.sort_values('total_points', ascending=False).head(15)
-        fig_points_leaderboard = px.bar(points_leaderboard, x='total_points', y='name', orientation='h',
-                                        title='المتصدرون بالنقاط (إجمالي)',
-                                        labels={'total_points': 'إجمالي النقاط', 'name': 'اسم العضو'},
-                                        text='total_points')
-        fig_points_leaderboard.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_points_leaderboard, use_container_width=True)
-
-        # Reading Hours Leaderboard (Bar Chart)
-        member_stats_df['total_hours'] = member_stats_df['total_reading_minutes'] / 60
-        hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=False).head(15)
-        fig_hours_leaderboard = px.bar(hours_leaderboard, x='total_hours', y='name', orientation='h',
-                                       title='المتصدرون بساعات القراءة (إجمالي)',
-                                       labels={'total_hours': 'إجمالي ساعات القراءة', 'name': 'اسم العضو'},
-                                       text='total_hours')
-        fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}')
-        fig_hours_leaderboard.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
-
+    # --- ROW 3: Leaderboards ---
+    col_points, col_hours = st.columns(2, gap="large")
+    with col_points:
+        st.subheader("⭐ المتصدرون بالنقاط")
+        if not member_stats_df.empty:
+            points_leaderboard = member_stats_df.sort_values('total_points', ascending=False).head(10)
+            fig_points_leaderboard = px.bar(points_leaderboard, x='total_points', y='name', orientation='h', labels={'total_points': 'النقاط', 'name': ''}, text='total_points')
+            fig_points_leaderboard.update_traces(textposition='outside')
+            fig_points_leaderboard.update_layout(title='', yaxis={'categoryorder':'total ascending'}, margin=dict(t=20, b=0, l=0, r=0))
+            st.plotly_chart(fig_points_leaderboard, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات.")
+    with col_hours:
+        st.subheader("⏳ المتصدرون بالساعات")
+        if not member_stats_df.empty:
+            member_stats_df['total_hours'] = member_stats_df['total_reading_minutes'] / 60
+            hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=False).head(10)
+            fig_hours_leaderboard = px.bar(hours_leaderboard, x='total_hours', y='name', orientation='h', labels={'total_hours': 'الساعات', 'name': ''}, text='total_hours')
+            fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+            fig_hours_leaderboard.update_layout(title='', yaxis={'categoryorder':'total ascending'}, margin=dict(t=20, b=0, l=0, r=0))
+            st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات.")
 
 elif page == "🎯 تحليلات التحديات":
     st.header("🎯 تحليلات التحديات")
@@ -615,15 +602,13 @@ elif page == "🎯 تحليلات التحديات":
                 st.markdown("---")
 
                 st.write("**مخطط حماس المجموعة**")
-                # FIX: Create a copy to avoid SettingWithCopyWarning
-                period_logs_copy = period_logs_df.copy()
-                period_logs_copy['total_minutes'] = period_logs_copy['common_book_minutes'] + period_logs_copy['other_book_minutes']
-                daily_cumulative_minutes = period_logs_copy.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
+                period_logs_df['total_minutes'] = period_logs_df['common_book_minutes'] + period_logs_df['other_book_minutes']
+                daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
                 
                 fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_minutes', title='مجموع دقائق القراءة التراكمي للمجموعة', labels={'submission_date_dt': 'تاريخ التحدي', 'total_minutes': 'مجموع الدقائق التراكمي'})
                 st.plotly_chart(fig_area, use_container_width=True)
 
-                heatmap_fig = create_activity_heatmap(period_logs_copy, start_date_obj, end_date_obj)
+                heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj)
                 st.plotly_chart(heatmap_fig, use_container_width=True)
 
         with tab2:
@@ -682,8 +667,7 @@ elif page == "🎯 تحليلات التحديات":
                     st.markdown("---")
 
                     st.subheader("🏅 الأوسمة والشارات")
-                    # FIX: Create an explicit copy to avoid SettingWithCopyWarning
-                    member_logs = period_logs_df[period_logs_df['member_id'] == member_id].copy()
+                    member_logs = period_logs_df[period_logs_df['member_id'] == member_id]
                     member_achievements = period_achievements_df[period_achievements_df['member_id'] == member_id] if not period_achievements_df.empty else pd.DataFrame()
 
                     badges_unlocked = []
