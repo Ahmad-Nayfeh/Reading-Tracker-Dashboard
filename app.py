@@ -122,13 +122,12 @@ def update_form_members(forms_service, form_id, question_id, active_member_names
         st.error(f"حدث خطأ غير متوقع أثناء تحديث النموذج: {e}")
         return False
 
-# --- Helper function for Dynamic Headline (Overall Dashboard) ---
+# --- FINALIZED: Helper function for Dynamic Headline (Overall Dashboard) ---
 def generate_headline(logs_df, achievements_df, members_df):
-    
     if 'common_book_minutes' in logs_df.columns and 'other_book_minutes' in logs_df.columns:
         logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
     else:
-        return "📚 **صفحة جديدة في ماراثوننا!** الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات."
+        return "صفحة جديدة في ماراثوننا، الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات"
 
     today = date.today()
     last_7_days_start = today - timedelta(days=6)
@@ -158,90 +157,121 @@ def generate_headline(logs_df, achievements_df, members_df):
 
     achievement_available = len(recent_finishers_names) > 0
     
-    style = """
-        background-color: #f0f2f6; 
-        padding: 15px; 
-        border-radius: 10px; 
-        text-align: center; 
-        font-size: 1.1em;
-        color: #1c2833;
-    """
+    style = "background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;"
     highlight_style = "color: #2980b9; font-weight: bold;"
 
     momentum_str = ""
-    achievement_str = ""
-
     if momentum_available:
         if momentum_positive:
-            momentum_str = f"🚀 الفريق في أوج حماسه! ارتفع الأداء بنسبة <span style='{highlight_style}'>{percentage_change:.0f}%</span> هذا الأسبوع"
+            momentum_str = f"الفريق في أوج حماسه، ارتفع الأداء بنسبة <span style='{highlight_style}'>{percentage_change:.0f}%</span> هذا الأسبوع"
         else:
-            momentum_str = f"🧐 هل أخذ الفريق استراحة محارب؟ تراجع الأداء بنسبة <span style='{highlight_style}'>{abs(percentage_change):.0f}%</span> هذا الأسبوع"
+            momentum_str = f"هل أخذ الفريق استراحة محارب، تراجع الأداء بنسبة <span style='{highlight_style}'>{abs(percentage_change):.0f}%</span> هذا الأسبوع"
     
+    achievement_str = ""
     if achievement_available:
-        if len(recent_finishers_names) == 1:
-            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{recent_finishers_names[0]}</span> على إنهائه لكتابه!"
-        elif len(recent_finishers_names) == 2:
-            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{recent_finishers_names[0]} و{recent_finishers_names[1]}</span> على إنهائهما لكتبهما!"
-        else:
-            achievement_detail = f"ونهنئ <span style='{highlight_style}'>{len(recent_finishers_names)} أبطال</span> على إنهائهم لكتبهم!"
+        n = len(recent_finishers_names)
+        names = [f"<span style='{highlight_style}'>{name}</span>" for name in recent_finishers_names]
+        if n == 1:
+            achievement_detail = f"ونهنئ {names[0]} على إنهائه لكتاب خلال السبع أيام الماضية"
+        elif n == 2:
+            achievement_detail = f"ونهنئ {names[0]} و {names[1]} على إنهاء كل واحد منهما لكتاب خلال السبع أيام الماضية"
+        elif n == 3:
+            achievement_detail = f"ونهنئ {names[0]} و {names[1]} و {names[2]} على إنهاء كل واحد منهم لكتاب خلال السبع أيام الماضية"
+        elif n == 4:
+            achievement_detail = f"ونهنئ {names[0]} و {names[1]} وعضوان آخران على إنهاء كل واحد منهم لكتاب خلال السبع أيام الماضية"
+        elif 5 <= n <= 10:
+            achievement_detail = f"ونهنئ {names[0]} و {names[1]} و <span style='{highlight_style}'>{n-2}</span> أعضاء آخرين على إنهاء كل واحد منهم لكتاب خلال السبع أيام الماضية"
+        else: # n >= 11
+            achievement_detail = f"ونحب أن نهنئ أكثر من <span style='{highlight_style}'>{n-1}</span> عضو على إنهائهم لكتاب خلال السبع أيام الماضية"
         
         if not momentum_available:
-            achievement_str = f"🏁 وانطلقت شرارة التحدي! {achievement_detail} من التالي؟"
+            achievement_str = f"انطلقت شرارة التحدي، {achievement_detail}"
         else:
             achievement_str = achievement_detail
-
+    
     if momentum_str and achievement_str:
         final_text = f"{momentum_str}، {achievement_str}"
     elif momentum_str:
-        final_text = momentum_str + "."
+        final_text = momentum_str
     elif achievement_str:
         final_text = achievement_str
     else:
-        final_text = "📚 **صفحة جديدة في ماراثوننا!** الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات."
+        final_text = "صفحة جديدة في ماراثوننا، الأسبوع الأول هو صفحة بيضاء، حان وقت تدوين الإنجازات"
 
     return f"<div style='{style}'>{final_text}</div>"
 
-# --- NEW: Helper function for Challenge Headline ---
-def generate_challenge_headline(podium_df, period_achievements_df, members_df):
-    """Generates a dynamic headline for the current challenge."""
-    parts = []
+# --- FINALIZED: Helper function for Challenge Headline ---
+def generate_challenge_headline(podium_df, period_achievements_df, members_df, end_date_obj):
+    today = date.today()
     highlight_style = "color: #2980b9; font-weight: bold;"
-
-    # Part 1: Quotes
+    
+    # --- Part 1: Top Quoter ---
+    quoter_part = ""
     if not podium_df.empty and podium_df['quotes'].sum() > 0:
         top_quoter = podium_df.loc[podium_df['quotes'].idxmax()]
-        parts.append(f"✍️ <span style='{highlight_style}'>{top_quoter['name']}</span> يتصدر سباق الاقتباسات")
+        quoter_part = f"<span style='{highlight_style}'>{top_quoter['name']}</span> يتصدر سباق الاقتباسات"
 
-    # Part 2: Book Finishers
+    # --- Part 2: Book Finishers ---
+    finishers_part = ""
     if not period_achievements_df.empty:
-        finishers = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']
-        if not finishers.empty:
-            finisher_names = members_df[members_df['member_id'].isin(finishers['member_id'])]['name'].tolist()
-            if len(finisher_names) == 1:
-                parts.append(f"🎉 <span style='{highlight_style}'>{finisher_names[0]}</span> كان أول من أنهى الكتاب")
-            else:
-                parts.append(f"🎉 <span style='{highlight_style}'>{len(finisher_names)} أبطال</span> أنهوا الكتاب بنجاح")
-
-    # Part 3: Discussion Attendees
-    if not period_achievements_df.empty:
-        attendees = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']
-        if not attendees.empty:
-            parts.append(f"💬 <span style='{highlight_style}'>{len(attendees)} مشاركاً</span> أثروا جلسة النقاش")
+        finishers_df = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK'].sort_values(by='achievement_date')
+        if not finishers_df.empty:
+            finisher_ids = finishers_df['member_id'].tolist()
+            finisher_names = [members_df[members_df['member_id'] == mid].iloc[0]['name'] for mid in finisher_ids]
+            n = len(finisher_names)
+            names_hl = [f"<span style='{highlight_style}'>{name}</span>" for name in finisher_names]
             
-    if not parts:
-        return "⏳ التحدي في بدايته، كل الإنجازات ممكنة!"
+            if n == 1:
+                finishers_part = f"وعلى الطرف الآخر {names_hl[0]} كان أول من أنهى الكتاب"
+            elif n == 2:
+                finishers_part = f"وعلى الطرف الآخر {names_hl[0]} كان أول من أنهى الكتاب، وتبعه في ذلك {names_hl[1]}"
+            elif n == 3:
+                finishers_part = f"وعلى الطرف الآخر {names_hl[0]} كان أول من أنهى الكتاب، وتبعه في ذلك {names_hl[1]}، ثم {names_hl[2]}"
+            else: # n >= 4
+                finishers_part = f"وعلى الطرف الآخر <span style='{highlight_style}'>{n}</span> أعضاء أنهوا الكتاب وعلى رأسهم {names_hl[0]}"
 
-    # Join the parts elegantly
-    if len(parts) == 1:
-        headline = parts[0] + "."
-    elif len(parts) == 2:
-        headline = f"{parts[0]}، بينما {parts[1]}."
-    else:
-        headline = f"{parts[0]}، و{parts[1]}، بالإضافة إلى {parts[2]}."
+    # --- Part 3: Discussion Attendees (Only if challenge has ended) ---
+    discussion_part = ""
+    if today > end_date_obj:
+        if not period_achievements_df.empty:
+            attendees_df = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']
+            attendee_ids = attendees_df['member_id'].tolist()
+            attendee_names = [members_df[members_df['member_id'] == mid].iloc[0]['name'] for mid in attendee_ids]
+            n_attendees = len(attendee_names)
+            names_hl = [f"<span style='{highlight_style}'>{name}</span>" for name in attendee_names]
 
+            if n_attendees == 0:
+                discussion_part = "ولكن للأسف لم تنعقد جلسة النقاش"
+            elif n_attendees == 1:
+                discussion_part = f"ولكن لسبب غريب لم يحضر إلا {names_hl[0]} إلى جلسة النقاش"
+            elif n_attendees == 2:
+                discussion_part = f"ولكن لم يحضر إلا {names_hl[0]} و {names_hl[1]} إلى جلسة النقاش"
+            elif n_attendees == 3:
+                discussion_part = f"وانعقدت جلسة النقاش وحضرها {names_hl[0]} و {names_hl[1]} و {names_hl[2]}"
+            elif 4 <= n_attendees <= 10:
+                discussion_part = f"وانعقدت جلسة النقاش وحضرها <span style='{highlight_style}'>{n_attendees}</span> أعضاء"
+            else: # n_attendees >= 11
+                discussion_part = f"وانعقدت جلسة النقاش وحضرها <span style='{highlight_style}'>{n_attendees}</span> عضو"
+
+    # --- Combine Parts ---
+    final_parts = [p for p in [quoter_part, finishers_part] if p]
+    
+    if len(final_parts) == 0:
+        final_text = "التحدي في بدايته، كل الإنجازات ممكنة"
+    elif len(final_parts) == 1:
+        final_text = final_parts[0]
+    elif len(final_parts) == 2:
+        final_text = f"{final_parts[0]}، {final_parts[1]}"
+
+    if discussion_part:
+        if final_text == "التحدي في بدايته، كل الإنجازات ممكنة":
+             final_text = discussion_part
+        else:
+            final_text = f"{final_text}، {discussion_part}"
+    
     style = "background-color: #eaf2f8; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;"
-    return f"<div style='{style}'>{headline}</div>"
-
+    return f"<div style='{style}'>{final_text}</div>"
+    
 # --- Page Configuration ---
 st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
 
@@ -445,9 +475,9 @@ if page == "📈 لوحة التحكم العامة":
     st.markdown("---")
     if not logs_df.empty and not achievements_df.empty and not members_df.empty:
         headline_html = generate_headline(logs_df.copy(), achievements_df.copy(), members_df.copy())
-        st.markdown(headline_html, unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>{headline_html}</div>", unsafe_allow_html=True)
     else:
-        st.markdown("<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>🚀 انطلق الماراثون! أهلاً بكم.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>انطلق الماراثون! أهلاً بكم</div>", unsafe_allow_html=True)
     st.markdown("---")
 
     col1, col2 = st.columns([1, 1.5], gap="large")
@@ -649,7 +679,6 @@ elif page == "🎯 تحليلات التحديات":
                 podium_data.append({'member_id': member_id, 'name': member['name'], 'points': int(points), 'hours': total_hours, 'quotes': int(total_quotes)})
             podium_df = pd.DataFrame(podium_data)
 
-        # --- MODIFIED: Removed 'منصة التتويج' tab ---
         tab1, tab2 = st.tabs(["📝 ملخص التحدي", "🧑‍💻 بطاقة القارئ"])
 
         with tab1:
@@ -657,7 +686,7 @@ elif page == "🎯 تحليلات التحديات":
                 st.info("لا توجد بيانات مسجلة لهذا التحدي بعد.")
             else:
                 # --- ROW 1: Dynamic Headline ---
-                st.markdown(generate_challenge_headline(podium_df, period_achievements_df, members_df), unsafe_allow_html=True)
+                st.markdown(generate_challenge_headline(podium_df, period_achievements_df, members_df, end_date_obj), unsafe_allow_html=True)
                 st.markdown("---")
 
                 # --- ROW 2: Gauge Chart & KPIs ---
@@ -898,7 +927,7 @@ elif page == "⚙️ الإدارة والإعدادات":
         else:
             st.info("لا يوجد أعضاء نشطون حالياً.")
 
-        st.subheader(f"_ أرشيف الأعضاء ({len(inactive_members_df)})")
+        st.subheader(f"أرشيف الأعضاء ({len(inactive_members_df)})")
         if not inactive_members_df.empty:
             for index, member in inactive_members_df.iterrows():
                 col1, col2 = st.columns([4, 1])
