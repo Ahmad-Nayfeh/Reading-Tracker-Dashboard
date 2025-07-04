@@ -98,7 +98,8 @@ def create_activity_heatmap(df, start_date, end_date, title_text=''):
         colorscale='Greens',
         hoverongaps=False,
         customdata=hover_pivot,
-        hovertemplate='%{customdata}<extra></extra>'
+        hovertemplate='%{customdata}<extra></extra>',
+        colorbar=dict(x=-0.15, y=0.5, yanchor='middle', thickness=15) # <-- MOVED COLORBAR TO THE LEFT
     ))
 
     fig.update_layout(
@@ -106,11 +107,12 @@ def create_activity_heatmap(df, start_date, end_date, title_text=''):
         xaxis_title='أسابيع التحدي',
         yaxis_title='',
         xaxis_autorange='reversed',
-        yaxis={'side': 'right'}, # Y-axis on the right
+        yaxis={'side': 'right'},
         xaxis=dict(tickmode='array', tickvals=list(month_positions.week_of_year), ticktext=list(month_positions.index)),
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
-        font_color='#333'
+        font_color='#333',
+        margin=dict(l=80) # <-- ADDED LEFT MARGIN FOR COLORBAR
     )
     return fig
 
@@ -575,7 +577,7 @@ if page == "📈 لوحة التحكم العامة":
             points_leaderboard = member_stats_df.sort_values('total_points', ascending=True).tail(10)
             fig_points_leaderboard = px.bar(points_leaderboard, x='total_points', y='name', orientation='h', labels={'total_points': 'النقاط', 'name': ''}, text='total_points')
             fig_points_leaderboard.update_traces(textposition='outside')
-            fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right'}, margin=dict(t=20, b=0, l=0, r=0))
+            fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0)) # <-- REVERSED AXIS
             st.plotly_chart(fig_points_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -586,7 +588,7 @@ if page == "📈 لوحة التحكم العامة":
             hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=True).tail(10)
             fig_hours_leaderboard = px.bar(hours_leaderboard, x='total_hours', y='name', orientation='h', labels={'total_hours': 'الساعات', 'name': ''}, text='total_hours')
             fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-            fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right'}, margin=dict(t=20, b=0, l=0, r=0))
+            fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0)) # <-- REVERSED AXIS
             st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -757,7 +759,7 @@ elif page == "🎯 تحليلات التحديات":
                     hours_chart_df = podium_df.sort_values('hours', ascending=True).tail(10)
                     fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع الساعات', 'name': ''}, text='hours')
                     fig_hours.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-                    fig_hours.update_layout(yaxis={'side': 'right'})
+                    fig_hours.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed') # <-- REVERSED AXIS
                     st.plotly_chart(fig_hours, use_container_width=True)
 
                 with col6:
@@ -765,7 +767,7 @@ elif page == "🎯 تحليلات التحديات":
                     points_chart_df = podium_df.sort_values('points', ascending=True).tail(10)
                     fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', title="", labels={'points': 'مجموع النقاط', 'name': ''}, text='points')
                     fig_points.update_traces(textposition='outside')
-                    fig_points.update_layout(yaxis={'side': 'right'})
+                    fig_points.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed') # <-- REVERSED AXIS
                     st.plotly_chart(fig_points, use_container_width=True)
 
 
