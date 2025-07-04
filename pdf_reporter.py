@@ -139,16 +139,135 @@ class PDFReporter(FPDF):
         self.set_y(A4_HEIGHT / 2.5)
         self.multi_cell(0, 20, self._process_text(title), align="C")
 
-    def add_plot(self, fig: go.Figure, width_percent=90):
+    def create_arabic_ready_plot(self, fig: go.Figure, title="", x_title="", y_title=""):
+        """
+        إنشاء رسم بياني جاهز للعربية مع إعدادات محسنة
+        """
+        if not self.font_loaded:
+            return fig
+        
+        # تطبيق الإعدادات المحسنة
+        fig.update_layout(
+            title=dict(
+                text=self._process_text(title) if title else "",
+                font=dict(family="Amiri", size=18, color="black"),
+                x=0.5,  # توسيط العنوان
+                y=0.95
+            ),
+            xaxis=dict(
+                title=dict(
+                    text=self._process_text(x_title) if x_title else "",
+                    font=dict(family="Amiri", size=14, color="black")
+                ),
+                tickfont=dict(family="Amiri", size=12, color="black"),
+                showgrid=True,
+                gridcolor="lightgray",
+                gridwidth=0.5
+            ),
+            yaxis=dict(
+                title=dict(
+                    text=self._process_text(y_title) if y_title else "",
+                    font=dict(family="Amiri", size=14, color="black")
+                ),
+                tickfont=dict(family="Amiri", size=12, color="black"),
+                showgrid=True,
+                gridcolor="lightgray",
+                gridwidth=0.5
+            ),
+            font=dict(family="Amiri", size=12, color="black"),
+            paper_bgcolor='white',
+            plot_bgcolor='white',
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        
+        # معالجة البيانات النصية العربية
+        for trace in fig.data:
+            if hasattr(trace, 'x') and trace.x is not None:
+                if isinstance(trace.x, (list, tuple)) and len(trace.x) > 0:
+                    if isinstance(trace.x[0], str):
+                        trace.x = [self._process_text(str(x)) for x in trace.x]
+            
+            if hasattr(trace, 'y') and trace.y is not None:
+                if isinstance(trace.y, (list, tuple)) and len(trace.y) > 0:
+                    if isinstance(trace.y[0], str):
+                        trace.y = [self._process_text(str(y)) for y in trace.y]
+        
+        return fig
+
+    def add_plot(self, fig: go.Figure, width_percent=90, title="", x_title="", y_title=""):
         """Adds a Plotly figure to the PDF, ensuring Arabic fonts are used."""
         if not self.font_loaded: return
         if fig:
-            fig.update_layout(
-                font_family="Amiri", # Use the font name for Plotly
+            # تحسين الرسم البياني للعربية
+            enhanced_fig = self.create_arabic_ready_plot(fig, title, x_title, y_title)
+            
+            # --- تحديث إعدادات الخط للرسم البياني ---
+            enhanced_fig.update_layout(
+                font=dict(
+                    family="Amiri",
+                    size=12,
+                    color="black"
+                ),
+                title=dict(
+                    font=dict(
+                        family="Amiri",
+                        size=16,
+                        color="black"
+                    )
+                ),
+                xaxis=dict(
+                    title=dict(
+                        font=dict(
+                            family="Amiri",
+                            size=14,
+                            color="black"
+                        )
+                    ),
+                    tickfont=dict(
+                        family="Amiri",
+                        size=12,
+                        color="black"
+                    )
+                ),
+                yaxis=dict(
+                    title=dict(
+                        font=dict(
+                            family="Amiri",
+                            size=14,
+                            color="black"
+                        )
+                    ),
+                    tickfont=dict(
+                        family="Amiri",
+                        size=12,
+                        color="black"
+                    )
+                ),
                 paper_bgcolor='rgba(0,0,0,0)', 
                 plot_bgcolor='rgba(0,0,0,0)'
             )
-            img_bytes = fig.to_image(format="png", scale=2)
+            
+            # تحديث النص العربي إذا كان موجوداً
+            if enhanced_fig.layout.title.text:
+                enhanced_fig.layout.title.text = self._process_text(enhanced_fig.layout.title.text)
+            
+            if enhanced_fig.layout.xaxis.title.text:
+                enhanced_fig.layout.xaxis.title.text = self._process_text(enhanced_fig.layout.xaxis.title.text)
+                
+            if enhanced_fig.layout.yaxis.title.text:
+                enhanced_fig.layout.yaxis.title.text = self._process_text(enhanced_fig.layout.yaxis.title.text)
+            
+            # معالجة تسميات المحاور إذا كانت عربية
+            if hasattr(enhanced_fig.data[0], 'x') and enhanced_fig.data[0].x is not None:
+                # للتأكد من أن تسميات المحور السيني تظهر بشكل صحيح
+                x_values = enhanced_fig.data[0].x
+                if isinstance(x_values, (list, tuple)) and len(x_values) > 0:
+                    if isinstance(x_values[0], str):
+                        processed_x = [self._process_text(str(x)) for x in x_values]
+                        enhanced_fig.data[0].x = processed_x
+            
+            # إنشاء الصورة مع دقة عالية
+            img_bytes = enhanced_fig.to_image(format="png", scale=2, width=800, height=600)
             img_file = io.BytesIO(img_bytes)
             
             page_width = self.w - self.l_margin - self.r_margin
@@ -217,7 +336,13 @@ class PDFReporter(FPDF):
         
         self.set_font("Amiri", "", 18)
         self.cell(0, 15, self._process_text("نمو القراءة التراكمي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.add_plot(data['fig_growth'])
+        # استخدام الدالة المحسنة مع العناوين
+        self.add_plot(
+            data['fig_growth'], 
+            title="نمو القراءة التراكمي",
+            x_title="التاريخ",
+            y_title="عدد الساعات"
+        )
 
         self.add_page()
         self.set_font("Amiri", "", 18)
