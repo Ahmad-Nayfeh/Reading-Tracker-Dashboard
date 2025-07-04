@@ -402,6 +402,9 @@ if st.sidebar.button("🔄 تحديث وسحب البيانات", type="primary"
     with st.spinner("جاري سحب البيانات..."):
         update_log = run_data_update(gc)
         st.session_state['update_log'] = update_log
+        # Clear editor state after a full sync
+        if 'editor_data' in st.session_state:
+            del st.session_state['editor_data']
     st.rerun()
 if 'update_log' in st.session_state:
     st.info("اكتملت عملية المزامنة.")
@@ -888,7 +891,7 @@ elif page == "🎯 تحليلات التحديات":
 elif page == "⚙️ الإدارة والإعدادات":
     st.header("⚙️ الإدارة والإعدادات")
     
-    admin_tab1, admin_tab2 = st.tabs(["إدارة المشاركين والتحديات", "إعدادات النقاط والروابط"])
+    admin_tab1, admin_tab2, admin_tab3 = st.tabs(["إدارة المشاركين والتحديات", "إعدادات النقاط والروابط", "📝 محرر السجلات"])
 
     with admin_tab1:
         st.subheader("👥 إدارة المشاركين")
@@ -1123,3 +1126,166 @@ elif page == "⚙️ الإدارة والإعدادات":
                         st.success("👍 تم حفظ التغييرات! تم تحديث نظام النقاط الافتراضي بنجاح.")
                     else:
                         st.error("حدث خطأ أثناء تحديث الإعدادات.")
+    
+    with admin_tab3:
+        st.header("📝 محرر السجلات الذكي")
+        st.info("لضمان تعديل أحدث البيانات، يرجى الضغط على الزر أدناه لسحب السجلات مباشرة من Google Sheet قبل البدء بالتعديل.")
+
+        if st.button("⬇️ تحميل أحدث السجلات للتعديل", use_container_width=True):
+            with st.spinner("جاري سحب أحدث البيانات من Google Sheet..."):
+                try:
+                    spreadsheet = gc.open_by_url(spreadsheet_url)
+                    worksheet = spreadsheet.worksheet("Form Responses 1")
+                    sheet_data = worksheet.get_all_records()
+                    
+                    if not sheet_data:
+                        st.warning("جدول البيانات فارغ. لا توجد سجلات لعرضها.")
+                        st.stop()
+
+                    df = pd.DataFrame(sheet_data)
+                    df['sheet_row_index'] = df.index + 2 # Save the original row index for updating later
+
+                    # --- Pre-processing for Checkboxes ---
+                    # Define the exact text for each option as it appears in the form/sheet
+                    ACHIEVEMENT_OPTIONS = {
+                        'ach_finish_common': 'أنهيت الكتاب المشترك',
+                        'ach_finish_other': 'أنهيت كتاباً آخر',
+                        'ach_attend_discussion': 'حضرت جلسة النقاش'
+                    }
+                    QUOTE_OPTIONS = {
+                        'quote_common': 'أرسلت اقتباساً من الكتاب المشترك',
+                        'quote_other': 'أرسلت اقتباساً من كتاب آخر'
+                    }
+
+                    # Get the actual column names from the DataFrame
+                    achievements_col_name = next((col for col in df.columns if 'إنجازات الكتب والنقاش' in col), None)
+                    quotes_col_name = next((col for col in df.columns if 'الاقتباسات التي أرسلتها' in col), None)
+
+                    # Create boolean columns from the text columns
+                    if achievements_col_name:
+                        df[achievements_col_name] = df[achievements_col_name].astype(str)
+                        for key, text in ACHIEVEMENT_OPTIONS.items():
+                            df[key] = df[achievements_col_name].str.contains(text, na=False)
+                    
+                    if quotes_col_name:
+                        df[quotes_col_name] = df[quotes_col_name].astype(str)
+                        for key, text in QUOTE_OPTIONS.items():
+                            df[key] = df[quotes_col_name].str.contains(text, na=False)
+                    
+                    st.session_state.editor_data = df
+                    st.session_state.original_editor_data = df.copy() # Make a copy for comparison
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"حدث خطأ أثناء سحب البيانات من Google Sheet: {e}")
+
+        if 'editor_data' in st.session_state:
+            st.success("تم تحميل البيانات بنجاح. يمكنك الآن تعديل السجلات أدناه.")
+            
+            original_df = st.session_state.original_editor_data
+            
+            # Define column names from the sheet
+            achievements_col_name = next((col for col in original_df.columns if 'إنجازات الكتب والنقاش' in col), "إنجازات الكتب والنقاش (اختر فقط عند حدوثه لأول مرة)")
+            quotes_col_name = next((col for col in original_df.columns if 'الاقتباسات التي أرسلتها' in col), "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختياري)")
+            common_minutes_col_name = next((col for col in original_df.columns if 'مدة قراءة الكتاب المشترك' in col), "مدة قراءة الكتاب المشترك (اختياري)")
+            other_minutes_col_name = next((col for col in original_df.columns if 'مدة قراءة كتاب آخر' in col), "مدة قراءة كتاب آخر (اختياري)")
+            date_col_name = "تاريخ القراءة"
+            name_col_name = "اسمك"
+            timestamp_col_name = "Timestamp"
+
+            edited_df = st.data_editor(
+                st.session_state.editor_data,
+                key="data_editor_final",
+                column_config={
+                    # Hide original text columns
+                    achievements_col_name: None,
+                    quotes_col_name: None,
+                    # Configure new checkbox columns
+                    'ach_finish_common': st.column_config.CheckboxColumn("أنهى الكتاب المشترك؟"),
+                    'ach_finish_other': st.column_config.CheckboxColumn("أنهى كتاباً آخر؟"),
+                    'ach_attend_discussion': st.column_config.CheckboxColumn("حضر النقاش؟"),
+                    'quote_common': st.column_config.CheckboxColumn("أرسل اقتباس (مشترك)؟"),
+                    'quote_other': st.column_config.CheckboxColumn("أرسل اقتباس (آخر)؟"),
+                    # Configure other columns
+                    common_minutes_col_name: st.column_config.TextColumn("مدة قراءة (مشترك)"),
+                    other_minutes_col_name: st.column_config.TextColumn("مدة قراءة (آخر)"),
+                    date_col_name: st.column_config.TextColumn("تاريخ القراءة"),
+                    # Disable editing for identifiers
+                    name_col_name: st.column_config.TextColumn("الاسم", disabled=True),
+                    timestamp_col_name: st.column_config.TextColumn("ختم الوقت", disabled=True),
+                    'sheet_row_index': None, # Hide the helper index column
+                },
+                use_container_width=True,
+                height=500,
+                hide_index=True
+            )
+
+            if st.button("💾 حفظ التعديلات في Google Sheet", use_container_width=True, type="primary"):
+                with st.spinner("جاري حفظ التغييرات... قد تستغرق العملية بعض الوقت."):
+                    try:
+                        spreadsheet = gc.open_by_url(spreadsheet_url)
+                        worksheet = spreadsheet.worksheet("Form Responses 1")
+                        sheet_headers = worksheet.row_values(1)
+
+                        # Find column indices (1-based)
+                        achievements_col_idx = sheet_headers.index(achievements_col_name) + 1
+                        quotes_col_idx = sheet_headers.index(quotes_col_name) + 1
+                        
+                        changes = pd.concat([original_df, edited_df]).drop_duplicates(keep=False)
+                        
+                        if changes.empty:
+                            st.info("لم يتم العثور على أي تغييرات لحفظها.")
+                        else:
+                            updates_count = 0
+                            # Iterate through only the changed rows
+                            changed_indices = changes.index
+                            for idx in changed_indices:
+                                original_row = original_df.loc[idx]
+                                edited_row = edited_df.loc[idx]
+                                sheet_row_to_update = original_row['sheet_row_index']
+                                
+                                batch_updates = []
+
+                                # --- Post-processing for Checkboxes ---
+                                ACH_OPTIONS = {'ach_finish_common': 'أنهيت الكتاب المشترك', 'ach_finish_other': 'أنهيت كتاباً آخر', 'ach_attend_discussion': 'حضرت جلسة النقاش'}
+                                QUOTE_OPTIONS = {'quote_common': 'أرسلت اقتباساً من الكتاب المشترك', 'quote_other': 'أرسلت اقتباساً من كتاب آخر'}
+
+                                new_ach_list = [text for key, text in ACH_OPTIONS.items() if edited_row[key]]
+                                new_ach_str = ", ".join(new_ach_list)
+                                
+                                new_quote_list = [text for key, text in QUOTE_OPTIONS.items() if edited_row[key]]
+                                new_quote_str = ", ".join(new_quote_list)
+
+                                # Add checkbox columns to batch update if they changed
+                                if new_ach_str != original_row[achievements_col_name]:
+                                    batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, achievements_col_idx)}', 'values': [[new_ach_str]]})
+                                
+                                if new_quote_str != original_row[quotes_col_name]:
+                                    batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, quotes_col_idx)}', 'values': [[new_quote_str]]})
+
+                                # Check other editable columns for changes
+                                simple_cols = {date_col_name: 'تاريخ القراءة', common_minutes_col_name: 'مدة قراءة (مشترك)', other_minutes_col_name: 'مدة قراءة (آخر)'}
+                                for sheet_col, display_col in simple_cols.items():
+                                    if str(original_row[sheet_col]) != str(edited_row[sheet_col]):
+                                        col_idx = sheet_headers.index(sheet_col) + 1
+                                        batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, col_idx)}', 'values': [[str(edited_row[sheet_col])]]})
+
+                                if batch_updates:
+                                    worksheet.batch_update(batch_updates)
+                                    updates_count += 1
+                                    time.sleep(1.1) # Respect API rate limits
+
+                            st.success(f"✅ تم تحديث {updates_count} سجل بنجاح في Google Sheet.")
+                            st.info("سيتم الآن إعادة مزامنة التطبيق بالكامل لضمان تحديث الإحصائيات.")
+                            with st.spinner("جاري المزامنة الكاملة..."):
+                                run_data_update(gc)
+                            st.success("🎉 اكتملت المزامنة!")
+                        
+                        # Clean up and rerun
+                        del st.session_state.editor_data
+                        if 'original_editor_data' in st.session_state:
+                            del st.session_state.original_editor_data
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"حدث خطأ فادح أثناء عملية الحفظ: {e}")
