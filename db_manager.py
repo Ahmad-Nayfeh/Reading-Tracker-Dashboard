@@ -163,7 +163,6 @@ def add_book_and_challenge(book_info, challenge_info, rules_info):
                 **rules_info
             }
             
-            # REMOVED: All penalty-related columns from the INSERT statement
             conn.execute("""
                 INSERT INTO ChallengePeriods (
                     start_date, end_date, common_book_id,
@@ -202,7 +201,6 @@ def rebuild_stats_tables(member_stats_data, group_stats_data):
         conn.execute("DELETE FROM MemberStats;")
         conn.execute("DELETE FROM GroupStats;")
         if member_stats_data:
-            # REMOVED: log_streak and quote_streak from the INSERT statement
             conn.executemany("""
                 INSERT INTO MemberStats (
                     member_id, total_points, total_reading_minutes_common, 
@@ -224,7 +222,6 @@ def update_global_settings(settings_dict):
     conn = get_db_connection()
     try:
         with conn:
-            # REMOVED: All penalty-related columns from the UPDATE statement
             conn.execute("""
                 UPDATE GlobalSettings
                 SET minutes_per_point_common = :minutes_per_point_common,
@@ -261,6 +258,24 @@ def delete_challenge(period_id):
         return True
     except sqlite3.Error as e:
         print(f"Database error in delete_challenge: {e}")
+        return False
+    finally:
+        conn.close()
+
+# --- NEWLY ADDED FUNCTION TO FIX THE SYNC ISSUE ---
+def clear_all_logs_and_achievements():
+    """
+    Wipes the ReadingLogs and Achievements tables for a full resync.
+    This is crucial for the new robust synchronization logic.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("DELETE FROM ReadingLogs;")
+            conn.execute("DELETE FROM Achievements;")
+        return True
+    except sqlite3.Error as e:
+        print(f"Database error in clear_all_logs_and_achievements: {e}")
         return False
     finally:
         conn.close()
