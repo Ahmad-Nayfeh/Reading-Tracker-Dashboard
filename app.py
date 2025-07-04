@@ -12,14 +12,12 @@ import gspread
 import time
 import locale
 
-# --- Helper function for Date Dropdown ---
+# --- MODIFIED: Helper function for Date Dropdown ---
 def generate_date_options():
-    try:
-        locale.setlocale(locale.LC_TIME, 'ar_SA.UTF-8')
-    except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'C')
+    # Removed locale settings to prevent encoding issues on different systems
     today_obj = date.today()
     dates = []
+    # Using a direct dictionary for reliable Arabic day names
     arabic_days = {"Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة", "Saturday": "السبت", "Sunday": "الأحد"}
     for i in range(7):
         current = today_obj - timedelta(days=i)
@@ -30,7 +28,6 @@ def generate_date_options():
 
 # --- Helper function to create Activity Heatmap ---
 def create_activity_heatmap(df, start_date, end_date, title_text='خريطة الالتزام الحرارية (مجموع دقائق القراءة اليومية)'):
-    """Generates a GitHub-style activity heatmap for reading data."""
     if df.empty:
         return go.Figure().update_layout(title="لا توجد بيانات قراءة لعرضها في الخريطة")
 
@@ -85,7 +82,6 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
 
 # --- Helper function to update Google Form ---
 def update_form_members(forms_service, form_id, question_id, active_member_names):
-    """Updates the dropdown options for the member selection question in the Google Form."""
     if not form_id or not question_id:
         st.error("لم يتم العثور على معرّف النموذج أو معرّف سؤال الأعضاء في الإعدادات.")
         return False
@@ -327,15 +323,17 @@ if not form_url:
                     form_id = form_result['formId']
                     date_options = generate_date_options()
                     
+                    # --- MODIFIED: Google Form creation request ---
                     update_requests = {"requests": [
                         {"updateFormInfo": {"info": {"description": "يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!"}, "updateMask": "description"}},
                         {"createItem": {"item": {"title": "اسمك", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": name} for name in member_names]}}}}, "location": {"index": 0}}},
                         {"createItem": {"item": {"title": "تاريخ القراءة", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": d} for d in date_options]}}}}, "location": {"index": 1}}},
-                        {"createItem": {"item": {"title": "مدة قراءة الكتاب المشترك", "questionItem": {"question": {"required": True, "timeQuestion": {"duration": True}}}}, "location": {"index": 2}}},
-                        {"createItem": {"item": {"title": "مدة قراءة كتاب آخر (إن وجد)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 3}}},
-                        {"createItem": {"item": {"title": "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أرسلت اقتباساً من الكتاب المشترك"}, {"value": "أرسلت اقتباساً من كتاب آخر"}]}}}}, "location": {"index": 4}}},
-                        {"createItem": {"item": {"title": "إنجازات خاصة (اختر فقط عند حدوثه لأول مرة)", "pageBreakItem": {}}, "location": {"index": 5}}},
-                        {"createItem": {"item": {"title": "إنجازات الكتب والنقاش", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أنهيت الكتاب المشترك"}, {"value": "أنهيت كتاباً آخر"}, {"value": "حضرت جلسة النقاش"}]}}}}, "location": {"index": 6}}}
+                        # MODIFICATION 1: "required": True has been removed to make it optional
+                        {"createItem": {"item": {"title": "مدة قراءة الكتاب المشترك (اختياري)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 2}}},
+                        {"createItem": {"item": {"title": "مدة قراءة كتاب آخر (اختياري)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 3}}},
+                        {"createItem": {"item": {"title": "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختياري)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أرسلت اقتباساً من الكتاب المشترك"}, {"value": "أرسلت اقتباساً من كتاب آخر"}]}}}}, "location": {"index": 4}}},
+                        # MODIFICATION 2: The page break item has been removed
+                        {"createItem": {"item": {"title": "إنجازات الكتب والنقاش (اختر فقط عند حدوثه لأول مرة)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أنهيت الكتاب المشترك"}, {"value": "أنهيت كتاباً آخر"}, {"value": "حضرت جلسة النقاش"}]}}}}, "location": {"index": 5}}}
                     ]}
                     
                     update_result = forms_service.forms().batchUpdate(formId=form_id, body=update_requests).execute()
@@ -684,11 +682,9 @@ elif page == "🎯 تحليلات التحديات":
             if period_logs_df.empty:
                 st.info("لا توجد بيانات مسجلة لهذا التحدي بعد.")
             else:
-                # --- ROW 1: Dynamic Headline ---
                 st.markdown(generate_challenge_headline(podium_df, period_achievements_df, members_df, end_date_obj), unsafe_allow_html=True)
                 st.markdown("---")
 
-                # --- ROW 2: Gauge Chart & KPIs ---
                 col1, col2 = st.columns([1, 1.5], gap="large")
                 with col1:
                     st.subheader("مؤشر التقدم")
@@ -721,7 +717,6 @@ elif page == "🎯 تحليلات التحديات":
                     kpi4.metric("📊 متوسط القراءة اليومي/عضو", f"{avg_daily_reading:.1f} دقيقة")
                 st.markdown("---")
 
-                # --- ROW 3: Cumulative Hours & Heatmap ---
                 col3, col4 = st.columns(2, gap="large")
                 with col3:
                     st.subheader("مجموع ساعات القراءة التراكمي")
@@ -733,10 +728,10 @@ elif page == "🎯 تحليلات التحديات":
                 with col4:
                     st.subheader("خريطة الالتزام الحرارية")
                     heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj, title_text="")
-                    st.plotly_chart(heatmap_fig, use_container_width=True)
+                    # --- MODIFIED: Added unique key to prevent ID conflict ---
+                    st.plotly_chart(heatmap_fig, use_container_width=True, key="group_heatmap")
                 st.markdown("---")
 
-                # --- ROW 4: New Bar Charts ---
                 col5, col6 = st.columns(2, gap="large")
                 with col5:
                     st.subheader("ساعات قراءة الأعضاء")
@@ -759,7 +754,6 @@ elif page == "🎯 تحليلات التحديات":
             if podium_df.empty:
                 st.info("لا يوجد مشاركون في هذا التحدي بعد.")
             else:
-                # ROW 1: Member selection
                 member_names = sorted(podium_df['name'].tolist())
                 selected_member_name = st.selectbox("اختر قارئاً لعرض بطاقته:", member_names)
                 st.markdown("---")
@@ -768,7 +762,6 @@ elif page == "🎯 تحليلات التحديات":
                     member_data = podium_df[podium_df['name'] == selected_member_name].iloc[0]
                     member_id = member_data['member_id']
                     
-                    # --- MODIFIED: KPIs are now horizontal ---
                     st.subheader("📊 مؤشرات الأداء")
                     kpi_cols = st.columns(3)
                     kpi_cols[0].metric("⭐ النقاط", f"{member_data['points']}")
@@ -776,7 +769,6 @@ elif page == "🎯 تحليلات التحديات":
                     kpi_cols[2].metric("✍️ الاقتباسات", f"{member_data['quotes']}")
                     st.markdown("---")
 
-                    # ROW 2: Badges & Achievements
                     col1, col2 = st.columns(2, gap="large")
                     
                     with col1:
@@ -820,20 +812,19 @@ elif page == "🎯 تحليلات التحديات":
 
                     st.markdown("---")
                     
-                    # ROW 3: Heatmap & Points Donut Chart
                     col4, col5 = st.columns(2, gap="large")
 
                     with col4:
                         st.subheader(f"خريطة التزام: {selected_member_name}")
                         individual_heatmap = create_activity_heatmap(member_logs, start_date_obj, end_date_obj, title_text="")
-                        st.plotly_chart(individual_heatmap, use_container_width=True)
+                        # --- MODIFIED: Added unique key to prevent ID conflict ---
+                        st.plotly_chart(individual_heatmap, use_container_width=True, key="individual_heatmap")
 
                     with col5:
                         st.subheader("مصادر النقاط")
                         period_rules = selected_challenge_data
                         points_source = {}
 
-                        # Calculate points from reading
                         common_minutes = member_logs['common_book_minutes'].sum()
                         other_minutes = member_logs['other_book_minutes'].sum()
                         if period_rules.get('minutes_per_point_common', 0) > 0:
@@ -841,13 +832,11 @@ elif page == "🎯 تحليلات التحديات":
                         if period_rules.get('minutes_per_point_other', 0) > 0:
                             points_source['قراءة كتب أخرى'] = (other_minutes // period_rules['minutes_per_point_other'])
                         
-                        # Calculate points from quotes
                         common_quotes = member_logs['submitted_common_quote'].sum()
                         other_quotes = member_logs['submitted_other_quote'].sum()
                         points_source['اقتباسات (الكتاب المشترك)'] = common_quotes * period_rules.get('quote_common_book_points', 0)
                         points_source['اقتباسات (كتب أخرى)'] = other_quotes * period_rules.get('quote_other_book_points', 0)
                         
-                        # Calculate points from achievements
                         if not member_achievements.empty:
                             for _, ach in member_achievements.iterrows():
                                 ach_type = ach['achievement_type']
@@ -858,7 +847,6 @@ elif page == "🎯 تحليلات التحديات":
                                 elif ach_type == 'FINISHED_OTHER_BOOK':
                                     points_source['إنهاء كتب أخرى'] = points_source.get('إنهاء كتب أخرى', 0) + period_rules.get('finish_other_book_points', 0)
                         
-                        # Filter out zero-point sources and create the chart
                         points_source_filtered = {k: v for k, v in points_source.items() if v > 0}
                         if points_source_filtered:
                             fig_donut = go.Figure(data=[go.Pie(
@@ -1080,7 +1068,6 @@ elif page == "⚙️ الإدارة والإعدادات":
             show_challenge_delete_dialog()
 
     with admin_tab2:
-        # --- MODIFIED: Simplified links display ---
         st.subheader("🔗 رابط المشاركة")
         st.info("هذا هو الرابط الذي يمكنك مشاركته مع أعضاء الفريق لتسجيل قراءاتهم اليومية. يسهل نسخه من المربع أدناه.")
         form_url = db.get_setting("form_url")
