@@ -25,8 +25,15 @@ def run_data_update(gc: gspread.Client):
         if not all_data or not all_data.get("members") or not all_data.get("periods"):
             update_log.append("❌ خطأ حرج: لم تكتمل عملية الإعداد.")
             return update_log
-        new_entries_count = process_new_data(raw_data_df, all_data)
-        update_log.append(f"🔄 تم العثور على ومعالجة {new_entries_count} تسجيل جديد.")
+        
+        # --- NEW ROBUST LOGIC ---
+        update_log.append("🔄 جاري مسح السجلات القديمة استعداداً للمزامنة الكاملة...")
+        db.clear_all_logs_and_achievements()
+        update_log.append("👍 تم مسح السجلات بنجاح.")
+
+        entries_processed = process_all_data(raw_data_df, all_data)
+        update_log.append(f"🔄 تمت معالجة وإعادة إدخال {entries_processed} تسجيل.")
+        
         update_log.append("🧮 جاري حساب وتحديث جميع الإحصائيات...")
         calculate_and_update_stats()
         update_log.append("✅ اكتمل حساب الإحصائيات.")
@@ -43,13 +50,17 @@ def parse_duration_to_minutes(duration_str):
         return h * 60 + m
     except (ValueError, TypeError): return 0
 
-def process_new_data(df, all_data):
+def process_all_data(df, all_data):
     member_map = {member['name']: member['member_id'] for member in all_data['members']}
     today = date.today()
-    new_entries_processed = 0
+    entries_processed_count = 0
+    
+    # Sort dataframe by timestamp to process achievements in order
+    df = df.sort_values(by='Timestamp').reset_index(drop=True)
+
     for index, row in df.iterrows():
         timestamp = str(row.get('Timestamp', '')).strip()
-        if not timestamp or db.check_log_exists(timestamp):
+        if not timestamp:
             continue
         
         submission_date_str = str(row.get('تاريخ القراءة', '')).strip()
@@ -59,45 +70,42 @@ def process_new_data(df, all_data):
         except (ValueError, TypeError, IndexError):
             continue
         
-        if submission_date_obj > today: continue
-        
         member_name = str(row.get('اسمك', '')).strip()
         member_id = member_map.get(member_name)
         if not member_id: continue
         
-        new_entries_processed += 1
+        entries_processed_count += 1
         
-        quote_responses = str(row.get('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)', ''))
-        common_quote_today = 1 if 'الكتاب المشترك' in quote_responses or 'أرسلت اقتباساً من الكتاب المشترك' in quote_responses else 0
-        other_quote_today = 1 if 'كتاب آخر' in quote_responses or 'أرسلت اقتباساً من كتاب آخر' in quote_responses else 0
-        
-        submission_date_db_format = submission_date_obj.strftime('%d/%m/%Y')
-        if common_quote_today and db.did_submit_quote_today(member_id, submission_date_db_format, 'COMMON'): common_quote_today = 0
-        if other_quote_today and db.did_submit_quote_today(member_id, submission_date_db_format, 'OTHER'): other_quote_today = 0
+        quote_responses = str(row.get('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختر كل ما ينطبق)', '') or row.get('ما هي الاقتباسات التي أرسلتها اليوم؟ (اختياري)', ''))
+        common_quote_today = 1 if 'الكتاب المشترك' in quote_responses else 0
+        other_quote_today = 1 if 'كتاب آخر' in quote_responses else 0
             
         log_data = {
-            "timestamp": timestamp, "member_id": member_id, "submission_date": submission_date_db_format,
-            "common_book_minutes": parse_duration_to_minutes(row.get('مدة قراءة الكتاب المشترك')),
-            "other_book_minutes": parse_duration_to_minutes(row.get('مدة قراءة كتاب آخر (إن وجد)')),
+            "timestamp": timestamp, "member_id": member_id, "submission_date": submission_date_obj.strftime('%d/%m/%Y'),
+            "common_book_minutes": parse_duration_to_minutes(row.get('مدة قراءة الكتاب المشترك') or row.get('مدة قراءة الكتاب المشترك (اختياري)')),
+            "other_book_minutes": parse_duration_to_minutes(row.get('مدة قراءة كتاب آخر (إن وجد)') or row.get('مدة قراءة كتاب آخر (اختياري)')),
             "submitted_common_quote": common_quote_today,
             "submitted_other_quote": other_quote_today,
         }
         
         achievements_to_add = []
-        achievement_responses = str(row.get('إنجازات الكتب والنقاش', ''))
+        achievement_responses = str(row.get('إنجازات الكتب والنقاش', '') or row.get('إنجازات الكتب والنقاش (اختر فقط عند حدوثه لأول مرة)', ''))
         current_period = next((p for p in all_data['periods'] if datetime.strptime(p['start_date'], '%Y-%m-%d').date() <= submission_date_obj <= datetime.strptime(p['end_date'], '%Y-%m-%d').date()), None)
 
         if current_period:
             period_id = current_period['period_id']
+            # We check the DB here because it's being populated in this same loop
             if 'أنهيت الكتاب المشترك' in achievement_responses and not db.has_achievement(member_id, 'FINISHED_COMMON_BOOK', period_id):
                 achievements_to_add.append((member_id, 'FINISHED_COMMON_BOOK', str(submission_date_obj), period_id, current_period['common_book_id']))
             if 'حضرت جلسة النقاش' in achievement_responses and not db.has_achievement(member_id, 'ATTENDED_DISCUSSION', period_id):
                  achievements_to_add.append((member_id, 'ATTENDED_DISCUSSION', str(submission_date_obj), period_id, None))
             if 'أنهيت كتاباً آخر' in achievement_responses:
+                # For "other book", we don't check for duplicates within the challenge, as one can finish multiple other books
                 achievements_to_add.append((member_id, 'FINISHED_OTHER_BOOK', str(submission_date_obj), period_id, None))
         
         db.add_log_and_achievements(log_data, achievements_to_add)
-    return new_entries_processed
+    return entries_processed_count
+
 
 def calculate_and_update_stats():
     all_data = db.get_all_data_for_stats()
@@ -118,7 +126,6 @@ def calculate_and_update_stats():
     for member in all_data["members"]:
         member_id = member['member_id']
         
-        # REMOVED: log_streak and quote_streak from the stats dictionary
         member_stats = {
             "member_id": member_id, "total_points": 0, "total_reading_minutes_common": 0, 
             "total_reading_minutes_other": 0, "total_common_books_read": 0, 
@@ -155,6 +162,9 @@ def calculate_and_update_stats():
                         member_stats['total_points'] += achievement_period_rules['finish_common_book_points']
                     elif achievement['achievement_type'] == 'ATTENDED_DISCUSSION':
                         member_stats['total_points'] += achievement_period_rules['attend_discussion_points']
+                    elif achievement['achievement_type'] == 'FINISHED_OTHER_BOOK':
+                        member_stats['total_points'] += achievement_period_rules['finish_other_book_points']
+
         
         if not member_logs_df.empty:
             member_stats['total_reading_minutes_common'] = int(member_logs_df['common_book_minutes'].sum())
@@ -167,20 +177,9 @@ def calculate_and_update_stats():
 
         if not member_achievements_df.empty:
             member_stats['total_common_books_read'] = len(member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK'])
+            member_stats['total_other_books_read'] = len(member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'])
             member_stats['meetings_attended'] = len(member_achievements_df[member_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION'])
             
-            finished_other_raw_count = len(member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'])
-            valid_other_books = min(finished_other_raw_count, member_stats['total_reading_minutes_other'] // 180 if member_stats['total_reading_minutes_other'] > 0 else 0)
-            member_stats['total_other_books_read'] = valid_other_books
-
-            other_book_achievements = member_achievements_df[member_achievements_df['achievement_type'] == 'FINISHED_OTHER_BOOK'].sort_values(by='achievement_id').head(valid_other_books)
-            for _, achievement_row in other_book_achievements.iterrows():
-                period_id = achievement_row.get('period_id')
-                if period_id in periods_map:
-                    member_stats['total_points'] += periods_map[period_id]['finish_other_book_points']
-
-        # REMOVED: The entire penalty calculation block has been deleted.
-        
         final_member_stats_data.append(member_stats)
     
     db.rebuild_stats_tables(final_member_stats_data, [])
