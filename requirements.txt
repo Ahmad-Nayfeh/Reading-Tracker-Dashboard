@@ -6,3 +6,8 @@ google-auth-httplib2
 plotly
 python-dotenv
 google-api-python-client
+fpdf2
+Pillow
+kaleido
+arabic-reshaper
+python-bidi
