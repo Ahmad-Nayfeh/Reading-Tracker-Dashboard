@@ -12,12 +12,42 @@ import gspread
 import time
 import locale
 
-# --- MODIFIED: Helper function for Date Dropdown ---
+# --- Page Configuration and RTL CSS Injection ---
+st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
+
+# This CSS snippet enforces RTL layout across the app
+st.markdown("""
+    <style>
+        /* Main app container */
+        .stApp {
+            direction: rtl;
+        }
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            direction: rtl;
+        }
+        /* Ensure text alignment is right for various elements */
+        h1, h2, h3, h4, h5, h6, p, li, .st-bk, .st-b8, .st-b9, .st-ae {
+            text-align: right !important;
+        }
+        /* Fix for radio buttons label alignment */
+        .st-b8 label {
+            text-align: right !important;
+            display: block;
+        }
+        /* Fix for selectbox label alignment */
+        .st-ae label {
+            text-align: right !important;
+            display: block;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
+# --- Helper function for Date Dropdown ---
 def generate_date_options():
-    # Removed locale settings to prevent encoding issues on different systems
     today_obj = date.today()
     dates = []
-    # Using a direct dictionary for reliable Arabic day names
     arabic_days = {"Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة", "Saturday": "السبت", "Sunday": "الأحد"}
     for i in range(7):
         current = today_obj - timedelta(days=i)
@@ -26,8 +56,8 @@ def generate_date_options():
         dates.append(f"{current.strftime('%Y-%m-%d')} ({arabic_day_name})")
     return dates
 
-# --- Helper function to create Activity Heatmap ---
-def create_activity_heatmap(df, start_date, end_date, title_text='خريطة الالتزام الحرارية (مجموع دقائق القراءة اليومية)'):
+# --- MODIFIED: Helper function to create Activity Heatmap with RTL support ---
+def create_activity_heatmap(df, start_date, end_date, title_text=''):
     if df.empty:
         return go.Figure().update_layout(title="لا توجد بيانات قراءة لعرضها في الخريطة")
 
@@ -48,7 +78,6 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     
     heatmap_data['week_of_year'] = heatmap_data['date'].dt.isocalendar().week
     heatmap_data['month_abbr'] = heatmap_data['date'].dt.strftime('%b')
-    heatmap_data['day'] = heatmap_data['date'].dt.day
     heatmap_data['hover_text'] = heatmap_data.apply(lambda row: f"<b>{row['date'].strftime('%Y-%m-%d')} ({row['weekday_ar']})</b><br>دقائق القراءة: {int(row['minutes'])}", axis=1)
 
     weekday_order_ar = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
@@ -56,6 +85,9 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
     
     heatmap_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='minutes', aggfunc='sum').fillna(0)
     hover_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='hover_text', aggfunc=lambda x: ' '.join(x))
+    
+    heatmap_pivot = heatmap_pivot[sorted(heatmap_pivot.columns, reverse=True)]
+    hover_pivot = hover_pivot[sorted(hover_pivot.columns, reverse=True)]
 
     month_positions = heatmap_data.drop_duplicates('month_abbr').set_index('month_abbr')
     
@@ -73,6 +105,8 @@ def create_activity_heatmap(df, start_date, end_date, title_text='خريطة ا�
         title=title_text,
         xaxis_title='أسابيع التحدي',
         yaxis_title='',
+        xaxis_autorange='reversed',
+        yaxis={'side': 'right'}, # Y-axis on the right
         xaxis=dict(tickmode='array', tickvals=list(month_positions.week_of_year), ticktext=list(month_positions.index)),
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -200,13 +234,11 @@ def generate_challenge_headline(podium_df, period_achievements_df, members_df, e
     today = date.today()
     highlight_style = "color: #2980b9; font-weight: bold;"
     
-    # --- Part 1: Top Quoter ---
     quoter_part = ""
     if not podium_df.empty and podium_df['quotes'].sum() > 0:
         top_quoter = podium_df.loc[podium_df['quotes'].idxmax()]
         quoter_part = f"<span style='{highlight_style}'>{top_quoter['name']}</span> يتصدر سباق الاقتباسات"
 
-    # --- Part 2: Book Finishers ---
     finishers_part = ""
     if not period_achievements_df.empty:
         finishers_df = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK'].sort_values(by='achievement_date')
@@ -225,7 +257,6 @@ def generate_challenge_headline(podium_df, period_achievements_df, members_df, e
             else: # n >= 4
                 finishers_part = f"وعلى الطرف الآخر <span style='{highlight_style}'>{n}</span> أعضاء أنهوا الكتاب وعلى رأسهم {names_hl[0]}"
 
-    # --- Part 3: Discussion Attendees (Only if challenge has ended) ---
     discussion_part = ""
     if today > end_date_obj:
         if not period_achievements_df.empty:
@@ -248,7 +279,6 @@ def generate_challenge_headline(podium_df, period_achievements_df, members_df, e
             else: # n_attendees >= 11
                 discussion_part = f"وانعقدت جلسة النقاش وحضرها <span style='{highlight_style}'>{n_attendees}</span> عضو"
 
-    # --- Combine Parts ---
     final_parts = [p for p in [quoter_part, finishers_part] if p]
     
     if len(final_parts) == 0:
@@ -267,15 +297,11 @@ def generate_challenge_headline(podium_df, period_achievements_df, members_df, e
     style = "background-color: #eaf2f8; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;"
     return f"<div style='{style}'>{final_text}</div>"
     
-# --- Page Configuration ---
-st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
-
-# --- 1. Main Authentication Call ---
+# --- Main App Authentication and Setup ---
 creds = auth_manager.authenticate()
 gc = auth_manager.get_gspread_client()
 forms_service = build('forms', 'v1', credentials=creds)
 
-# --- 2. Initial Workspace Setup Wizard ---
 spreadsheet_url = db.get_setting("spreadsheet_url")
 form_url = db.get_setting("form_url")
 
@@ -323,16 +349,13 @@ if not form_url:
                     form_id = form_result['formId']
                     date_options = generate_date_options()
                     
-                    # --- MODIFIED: Google Form creation request ---
                     update_requests = {"requests": [
                         {"updateFormInfo": {"info": {"description": "يرجى ملء هذا النموذج يومياً لتسجيل نشاطك في تحدي القراءة. بالتوفيق!"}, "updateMask": "description"}},
                         {"createItem": {"item": {"title": "اسمك", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": name} for name in member_names]}}}}, "location": {"index": 0}}},
                         {"createItem": {"item": {"title": "تاريخ القراءة", "questionItem": {"question": {"required": True, "choiceQuestion": {"type": "DROP_DOWN", "options": [{"value": d} for d in date_options]}}}}, "location": {"index": 1}}},
-                        # MODIFICATION 1: "required": True has been removed to make it optional
                         {"createItem": {"item": {"title": "مدة قراءة الكتاب المشترك (اختياري)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 2}}},
                         {"createItem": {"item": {"title": "مدة قراءة كتاب آخر (اختياري)", "questionItem": {"question": {"timeQuestion": {"duration": True}}}}, "location": {"index": 3}}},
                         {"createItem": {"item": {"title": "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختياري)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أرسلت اقتباساً من الكتاب المشترك"}, {"value": "أرسلت اقتباساً من كتاب آخر"}]}}}}, "location": {"index": 4}}},
-                        # MODIFICATION 2: The page break item has been removed
                         {"createItem": {"item": {"title": "إنجازات الكتب والنقاش (اختر فقط عند حدوثه لأول مرة)", "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "أنهيت الكتاب المشترك"}, {"value": "أنهيت كتاباً آخر"}, {"value": "حضرت جلسة النقاش"}]}}}}, "location": {"index": 5}}}
                     ]}
                     
@@ -365,7 +388,7 @@ if not form_url:
                     st.error(f"🌐 خطأ في الاتصال بخدمات جوجل: {e}")
     st.stop()
 
-# --- 3. Main Application Interface ---
+# --- Main Application Logic ---
 all_data = db.get_all_data_for_stats()
 members_df = pd.DataFrame(all_data.get('members', []))
 periods_df = pd.DataFrame(all_data.get('periods', []))
@@ -416,7 +439,7 @@ if not setup_complete:
                 st.error("✏️ بيانات غير مكتملة: يرجى إدخال عنوان الكتاب واسم المؤلف.")
     st.stop()
 
-# --- Main App Pages ---
+# --- Page Navigation ---
 st.sidebar.title("التنقل")
 page_options = ["📈 لوحة التحكم العامة", "🎯 تحليلات التحديات", "⚙️ الإدارة والإعدادات"]
 page = st.sidebar.radio("اختر صفحة لعرضها:", page_options, key="navigation")
@@ -427,7 +450,6 @@ if not logs_df.empty:
     datetime_series = pd.to_datetime(logs_df['submission_date'], format='%d/%m/%Y', errors='coerce')
     logs_df['submission_date_dt'] = datetime_series.dt.date
     logs_df['weekday_name'] = datetime_series.dt.strftime('%A')
-    # Add total minutes to logs_df for reuse
     logs_df['total_minutes'] = logs_df['common_book_minutes'] + logs_df['other_book_minutes']
 
 achievements_df = pd.DataFrame(all_data.get('achievements', []))
@@ -438,19 +460,17 @@ member_stats_df = db.get_table_as_df('MemberStats')
 if not member_stats_df.empty and not members_df.empty:
     member_stats_df = pd.merge(member_stats_df, members_df[['member_id', 'name']], on='member_id', how='left')
 
+# --- Page Content ---
 if page == "📈 لوحة التحكم العامة":
     st.header("📈 لوحة التحكم العامة")
     
     if not member_stats_df.empty:
         total_minutes = member_stats_df['total_reading_minutes_common'].sum() + member_stats_df['total_reading_minutes_other'].sum()
         total_hours = int(total_minutes // 60)
-        
         total_books_finished = member_stats_df['total_common_books_read'].sum() + member_stats_df['total_other_books_read'].sum()
         total_quotes = member_stats_df['total_quotes_submitted'].sum()
-        
         member_stats_df['total_reading_minutes'] = member_stats_df['total_reading_minutes_common'] + member_stats_df['total_reading_minutes_other']
         member_stats_df['total_books_read'] = member_stats_df['total_common_books_read'] + member_stats_df['total_other_books_read']
-
         king_of_reading = member_stats_df.loc[member_stats_df['total_reading_minutes'].idxmax()]
         king_of_books = member_stats_df.loc[member_stats_df['total_books_read'].idxmax()]
         king_of_points = member_stats_df.loc[member_stats_df['total_points'].idxmax()]
@@ -511,9 +531,9 @@ if page == "📈 لوحة التحكم العامة":
             daily_minutes = daily_minutes.sort_values('submission_date_dt')
             daily_minutes['cumulative_hours'] = daily_minutes['minutes'].cumsum() / 60
             fig_growth = px.area(daily_minutes, x='submission_date_dt', y='cumulative_hours', 
-                                 labels={'submission_date_dt': 'التاريخ', 'cumulative_hours': 'مجموع الساعات التراكمي'},
+                                 labels={'submission_date_dt': 'التاريخ', 'cumulative_hours': 'مجموع الساعات'},
                                  markers=False)
-            fig_growth.update_layout(title='', margin=dict(t=20, b=0, l=0, r=0))
+            fig_growth.update_layout(title='', margin=dict(t=20, b=0, l=0, r=0), xaxis_autorange='reversed', yaxis={'side': 'right'})
             st.plotly_chart(fig_growth, use_container_width=True)
         else:
             st.info("لا توجد بيانات لعرض المخطط.")
@@ -527,7 +547,7 @@ if page == "📈 لوحة التحكم العامة":
                 donut_labels = ['الكتاب المشترك', 'الكتب الأخرى']
                 donut_values = [total_common_minutes, total_other_minutes]
                 fig_donut = go.Figure(data=[go.Pie(labels=donut_labels, values=donut_values, hole=.5)])
-                fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), annotations=[dict(text='التوزيع', x=0.5, y=0.5, font_size=14, showarrow=False)])
+                fig_donut.update_layout(showlegend=True, legend=dict(x=0.5, y=-0.1, xanchor='center', orientation='h'), margin=dict(t=20, b=20, l=20, r=20), annotations=[dict(text='التوزيع', x=0.5, y=0.5, font_size=14, showarrow=False)])
                 st.plotly_chart(fig_donut, use_container_width=True)
             else:
                 st.info("لا توجد بيانات.")
@@ -538,11 +558,11 @@ if page == "📈 لوحة التحكم العامة":
         st.subheader("📅 أيام النشاط")
         if not logs_df.empty:
             weekday_map_ar = {"Saturday": "س", "Sunday": "ح", "Monday": "ن", "Tuesday": "ث", "Wednesday": "ر", "Thursday": "خ", "Friday": "ج"}
+            weekday_order_ar = ["ج", "خ", "ر", "ث", "ن", "ح", "س"]
             logs_df['weekday_ar'] = logs_df['weekday_name'].map(weekday_map_ar)
-            weekday_order_ar = ["س", "ح", "ن", "ث", "ر", "خ", "ج"]
             daily_activity_hours = (logs_df.groupby('weekday_ar')['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
             fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, labels={'x': '', 'y': 'الساعات'})
-            fig_bar_days.update_layout(margin=dict(t=20, b=0, l=0, r=0), title='')
+            fig_bar_days.update_layout(margin=dict(t=20, b=0, l=0, r=0), title='', yaxis={'side': 'right'})
             st.plotly_chart(fig_bar_days, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -552,10 +572,10 @@ if page == "📈 لوحة التحكم العامة":
     with col_points:
         st.subheader("⭐ المتصدرون بالنقاط")
         if not member_stats_df.empty:
-            points_leaderboard = member_stats_df.sort_values('total_points', ascending=False).head(10)
+            points_leaderboard = member_stats_df.sort_values('total_points', ascending=True).tail(10)
             fig_points_leaderboard = px.bar(points_leaderboard, x='total_points', y='name', orientation='h', labels={'total_points': 'النقاط', 'name': ''}, text='total_points')
             fig_points_leaderboard.update_traces(textposition='outside')
-            fig_points_leaderboard.update_layout(title='', yaxis={'categoryorder':'total ascending'}, margin=dict(t=20, b=0, l=0, r=0))
+            fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right'}, margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_points_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -563,10 +583,10 @@ if page == "📈 لوحة التحكم العامة":
         st.subheader("⏳ المتصدرون بالساعات")
         if not member_stats_df.empty:
             member_stats_df['total_hours'] = member_stats_df['total_reading_minutes'] / 60
-            hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=False).head(10)
+            hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=True).tail(10)
             fig_hours_leaderboard = px.bar(hours_leaderboard, x='total_hours', y='name', orientation='h', labels={'total_hours': 'الساعات', 'name': ''}, text='total_hours')
             fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-            fig_hours_leaderboard.update_layout(title='', yaxis={'categoryorder':'total ascending'}, margin=dict(t=20, b=0, l=0, r=0))
+            fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right'}, margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -574,7 +594,6 @@ if page == "📈 لوحة التحكم العامة":
 
 elif page == "🎯 تحليلات التحديات":
     st.header("🎯 تحليلات التحديات")
-
     if periods_df.empty:
         st.info("لا توجد تحديات حالية أو سابقة لعرض تحليلاتها. يمكنك إضافة تحدي جديد من صفحة 'الإدارة والإعدادات'.")
         st.stop()
@@ -722,31 +741,31 @@ elif page == "🎯 تحليلات التحديات":
                     st.subheader("مجموع ساعات القراءة التراكمي")
                     daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
                     daily_cumulative_minutes['total_hours'] = daily_cumulative_minutes['total_minutes'] / 60
-                    fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_hours', title='', labels={'submission_date_dt': 'تاريخ التحدي', 'total_hours': 'مجموع الساعات التراكمي'})
+                    fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_hours', title='', labels={'submission_date_dt': 'تاريخ التحدي', 'total_hours': 'مجموع الساعات'})
+                    fig_area.update_layout(xaxis_autorange='reversed', yaxis={'side': 'right'})
                     st.plotly_chart(fig_area, use_container_width=True)
 
                 with col4:
                     st.subheader("خريطة الالتزام الحرارية")
                     heatmap_fig = create_activity_heatmap(period_logs_df, start_date_obj, end_date_obj, title_text="")
-                    # --- MODIFIED: Added unique key to prevent ID conflict ---
                     st.plotly_chart(heatmap_fig, use_container_width=True, key="group_heatmap")
                 st.markdown("---")
 
                 col5, col6 = st.columns(2, gap="large")
                 with col5:
                     st.subheader("ساعات قراءة الأعضاء")
-                    hours_chart_df = podium_df.sort_values('hours', ascending=False).head(10)
-                    fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع ساعات القراءة', 'name': ''}, text='hours')
+                    hours_chart_df = podium_df.sort_values('hours', ascending=True).tail(10)
+                    fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع الساعات', 'name': ''}, text='hours')
                     fig_hours.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-                    fig_hours.update_layout(yaxis={'categoryorder':'total ascending'})
+                    fig_hours.update_layout(yaxis={'side': 'right'})
                     st.plotly_chart(fig_hours, use_container_width=True)
 
                 with col6:
                     st.subheader("نقاط الأعضاء")
-                    points_chart_df = podium_df.sort_values('points', ascending=False).head(10)
+                    points_chart_df = podium_df.sort_values('points', ascending=True).tail(10)
                     fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', title="", labels={'points': 'مجموع النقاط', 'name': ''}, text='points')
                     fig_points.update_traces(textposition='outside')
-                    fig_points.update_layout(yaxis={'categoryorder':'total ascending'})
+                    fig_points.update_layout(yaxis={'side': 'right'})
                     st.plotly_chart(fig_points, use_container_width=True)
 
 
@@ -817,7 +836,6 @@ elif page == "🎯 تحليلات التحديات":
                     with col4:
                         st.subheader(f"خريطة التزام: {selected_member_name}")
                         individual_heatmap = create_activity_heatmap(member_logs, start_date_obj, end_date_obj, title_text="")
-                        # --- MODIFIED: Added unique key to prevent ID conflict ---
                         st.plotly_chart(individual_heatmap, use_container_width=True, key="individual_heatmap")
 
                     with col5:
