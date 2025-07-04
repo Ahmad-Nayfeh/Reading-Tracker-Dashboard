@@ -262,7 +262,6 @@ def delete_challenge(period_id):
     finally:
         conn.close()
 
-# --- NEWLY ADDED FUNCTION TO FIX THE SYNC ISSUE ---
 def clear_all_logs_and_achievements():
     """
     Wipes the ReadingLogs and Achievements tables for a full resync.
@@ -279,3 +278,32 @@ def clear_all_logs_and_achievements():
         return False
     finally:
         conn.close()
+
+def get_all_logs_with_member_names():
+    """
+    Fetches all reading logs and joins with the members table to get member names.
+    Returns a Pandas DataFrame ready for the data editor.
+    """
+    conn = get_db_connection()
+    try:
+        query = """
+            SELECT 
+                rl.log_id,
+                m.name,
+                rl.submission_date,
+                rl.common_book_minutes,
+                rl.other_book_minutes,
+                rl.submitted_common_quote,
+                rl.submitted_other_quote,
+                rl.timestamp
+            FROM ReadingLogs rl
+            JOIN Members m ON rl.member_id = m.member_id
+            ORDER BY rl.log_id DESC
+        """
+        df = pd.read_sql_query(query, conn)
+    except Exception as e:
+        print(f"Error reading logs with member names: {e}")
+        df = pd.DataFrame()
+    finally:
+        conn.close()
+    return df
