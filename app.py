@@ -11,6 +11,10 @@ from googleapiclient.errors import HttpError
 import gspread
 import time
 import locale
+import base64
+
+# Import the new PDF reporter class
+from pdf_reporter import PDFReporter
 
 # --- Page Configuration and RTL CSS Injection ---
 st.set_page_config(page_title="ماراثون القراءة", page_icon="📚", layout="wide")
@@ -518,17 +522,28 @@ if page == "📈 لوحة التحكم العامة":
 
     with col2:
         st.subheader("📊 مؤشرات الأداء الرئيسية")
+        kpis_main = {
+            "⏳ إجمالي ساعات القراءة": f"{total_hours:,}",
+            "📚 إجمالي الكتب المنهَاة": f"{total_books_finished:,}",
+            "✍️ إجمالي الاقتباسات": f"{total_quotes:,}"
+        }
+        kpis_secondary = {
+            "👥 الأعضاء النشطون": f"{active_members_count}",
+            "🏁 التحديات المكتملة": f"{completed_challenges_count}",
+            "🗓️ أيام القراءة": f"{total_reading_days}"
+        }
         kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric(label="⏳ إجمالي ساعات القراءة", value=f"{total_hours:,}")
-        kpi2.metric(label="📚 إجمالي الكتب المنهَاة", value=f"{total_books_finished:,}")
-        kpi3.metric(label="✍️ إجمالي الاقتباسات", value=f"{total_quotes:,}")
+        for col, (label, value) in zip([kpi1, kpi2, kpi3], kpis_main.items()):
+            col.metric(label=label, value=value)
+        
         kpi4, kpi5, kpi6 = st.columns(3)
-        kpi4.metric(label="👥 الأعضاء النشطون", value=f"{active_members_count}")
-        kpi5.metric(label="🏁 التحديات المكتملة", value=f"{completed_challenges_count}")
-        kpi6.metric(label="🗓️ أيام القراءة", value=f"{total_reading_days}")
+        for col, (label, value) in zip([kpi4, kpi5, kpi6], kpis_secondary.items()):
+            col.metric(label=label, value=value)
+
     st.markdown("---")
     
     col_growth, col_donut, col_days = st.columns([2, 1, 1], gap="large")
+    fig_growth, fig_donut, fig_bar_days = None, None, None
     with col_growth:
         st.subheader("📈 نمو القراءة التراكمي")
         if not logs_df.empty:
@@ -574,13 +589,14 @@ if page == "📈 لوحة التحكم العامة":
     st.markdown("---")
 
     col_points, col_hours = st.columns(2, gap="large")
+    points_leaderboard_df, hours_leaderboard_df = pd.DataFrame(), pd.DataFrame()
     with col_points:
         st.subheader("⭐ المتصدرون بالنقاط")
         if not member_stats_df.empty:
-            points_leaderboard = member_stats_df.sort_values('total_points', ascending=True).tail(10)
-            fig_points_leaderboard = px.bar(points_leaderboard, x='total_points', y='name', orientation='h', labels={'total_points': 'النقاط', 'name': ''}, text='total_points')
+            points_leaderboard_df = member_stats_df.sort_values('total_points', ascending=False).head(10)[['name', 'total_points']].rename(columns={'name': 'الاسم', 'total_points': 'النقاط'})
+            fig_points_leaderboard = px.bar(points_leaderboard_df, x='النقاط', y='الاسم', orientation='h', text='النقاط')
             fig_points_leaderboard.update_traces(textposition='outside')
-            fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0)) # <-- REVERSED AXIS
+            fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right', 'autorange': 'reversed'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_points_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
@@ -588,13 +604,76 @@ if page == "📈 لوحة التحكم العامة":
         st.subheader("⏳ المتصدرون بالساعات")
         if not member_stats_df.empty:
             member_stats_df['total_hours'] = member_stats_df['total_reading_minutes'] / 60
-            hours_leaderboard = member_stats_df.sort_values('total_hours', ascending=True).tail(10)
-            fig_hours_leaderboard = px.bar(hours_leaderboard, x='total_hours', y='name', orientation='h', labels={'total_hours': 'الساعات', 'name': ''}, text='total_hours')
+            hours_leaderboard_df = member_stats_df.sort_values('total_hours', ascending=False).head(10)[['name', 'total_hours']].rename(columns={'name': 'الاسم', 'total_hours': 'الساعات'})
+            hours_leaderboard_df['الساعات'] = hours_leaderboard_df['الساعات'].round(1)
+            fig_hours_leaderboard = px.bar(hours_leaderboard_df, x='الساعات', y='الاسم', orientation='h', text='الساعات')
             fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-            fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0)) # <-- REVERSED AXIS
+            fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right', 'autorange': 'reversed'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
+    
+    # --- NEW SECTION: PDF EXPORT ---
+    st.markdown("---")
+    with st.expander("🖨️ تصدير تقرير الأداء (PDF)"):
+        st.info("اختر المحتوى الذي تريد تضمينه في التقرير، ثم اضغط على زر الإنشاء.")
+        
+        report_options = {
+            "تصدير لوحة التحكم العامة فقط": "dashboard_only",
+            "تصدير معلومات التحدي الحالي فقط": "current_challenge_only",
+            "تصدير لوحة التحكم العامة + التحدي الحالي": "dashboard_and_current",
+            "تصدير لوحة التحكم العامة + جميع التحديات": "dashboard_and_all_challenges",
+            "تصدير كل شيء (عام + كل التحديات + كل القراء)": "all_inclusive"
+        }
+        
+        selected_report = st.selectbox("اختر نوع التقرير:", options=list(report_options.keys()))
+
+        if st.button("🚀 إنشاء وتصدير التقرير", use_container_width=True, type="primary"):
+            report_key = report_options[selected_report]
+            with st.spinner("جاري إنشاء التقرير... قد تستغرق العملية بعض الوقت."):
+                pdf = PDFReporter()
+                pdf.add_cover_page()
+                
+                # Build Table of Contents
+                toc = []
+                if "dashboard" in report_key:
+                    toc.append("تحليل لوحة التحكم العامة")
+                # Add other sections to TOC based on selection (to be implemented later)
+                
+                pdf.add_table_of_contents(toc)
+
+                # Add content based on selection
+                if "dashboard" in report_key:
+                    dashboard_data = {
+                        "kpis_main": kpis_main,
+                        "kpis_secondary": kpis_secondary,
+                        "fig_growth": fig_growth,
+                        "points_leaderboard_df": points_leaderboard_df,
+                        "hours_leaderboard_df": hours_leaderboard_df
+                    }
+                    pdf.add_dashboard_report(dashboard_data)
+
+                # --- Placeholder for other report sections ---
+                # if "challenge" in report_key: ...
+                # if "readers" in report_key: ...
+
+
+                pdf_output = bytes(pdf.output())
+                st.session_state.pdf_file = pdf_output
+                st.rerun()
+
+        if 'pdf_file' in st.session_state:
+            pdf_file = st.session_state.pdf_file
+            st.download_button(
+                label="📥 تحميل التقرير الآن",
+                data=pdf_file,
+                file_name=f"ReadingMarathon_Report_{date.today()}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+            if st.button("إغلاق"):
+                del st.session_state.pdf_file
+                st.rerun()
 
 
 elif page == "🎯 تحليلات التحديات":
@@ -1146,7 +1225,6 @@ elif page == "⚙️ الإدارة والإعدادات":
                     df['sheet_row_index'] = df.index + 2 # Save the original row index for updating later
 
                     # --- Pre-processing for Checkboxes ---
-                    # Define the exact text for each option as it appears in the form/sheet
                     ACHIEVEMENT_OPTIONS = {
                         'ach_finish_common': 'أنهيت الكتاب المشترك',
                         'ach_finish_other': 'أنهيت كتاباً آخر',
@@ -1157,11 +1235,9 @@ elif page == "⚙️ الإدارة والإعدادات":
                         'quote_other': 'أرسلت اقتباساً من كتاب آخر'
                     }
 
-                    # Get the actual column names from the DataFrame
                     achievements_col_name = next((col for col in df.columns if 'إنجازات الكتب والنقاش' in col), None)
                     quotes_col_name = next((col for col in df.columns if 'الاقتباسات التي أرسلتها' in col), None)
 
-                    # Create boolean columns from the text columns
                     if achievements_col_name:
                         df[achievements_col_name] = df[achievements_col_name].astype(str)
                         for key, text in ACHIEVEMENT_OPTIONS.items():
@@ -1173,7 +1249,7 @@ elif page == "⚙️ الإدارة والإعدادات":
                             df[key] = df[quotes_col_name].str.contains(text, na=False)
                     
                     st.session_state.editor_data = df
-                    st.session_state.original_editor_data = df.copy() # Make a copy for comparison
+                    st.session_state.original_editor_data = df.copy()
                     st.rerun()
 
                 except Exception as e:
@@ -1184,7 +1260,6 @@ elif page == "⚙️ الإدارة والإعدادات":
             
             original_df = st.session_state.original_editor_data
             
-            # Define column names from the sheet
             achievements_col_name = next((col for col in original_df.columns if 'إنجازات الكتب والنقاش' in col), "إنجازات الكتب والنقاش (اختر فقط عند حدوثه لأول مرة)")
             quotes_col_name = next((col for col in original_df.columns if 'الاقتباسات التي أرسلتها' in col), "ما هي الاقتباسات التي أرسلتها اليوم؟ (اختياري)")
             common_minutes_col_name = next((col for col in original_df.columns if 'مدة قراءة الكتاب المشترك' in col), "مدة قراءة الكتاب المشترك (اختياري)")
@@ -1197,37 +1272,29 @@ elif page == "⚙️ الإدارة والإعدادات":
                 st.session_state.editor_data,
                 key="data_editor_final",
                 column_config={
-                    # Hide original text columns
-                    achievements_col_name: None,
-                    quotes_col_name: None,
-                    # Configure new checkbox columns
-                    'ach_finish_common': st.column_config.CheckboxColumn("أنهى الكتاب المشترك؟"),
-                    'ach_finish_other': st.column_config.CheckboxColumn("أنهى كتاباً آخر؟"),
+                    achievements_col_name: None, quotes_col_name: None,
+                    'ach_finish_common': st.column_config.CheckboxColumn("أنهى المشترك؟"),
+                    'ach_finish_other': st.column_config.CheckboxColumn("أنهى آخر؟"),
                     'ach_attend_discussion': st.column_config.CheckboxColumn("حضر النقاش؟"),
-                    'quote_common': st.column_config.CheckboxColumn("أرسل اقتباس (مشترك)؟"),
-                    'quote_other': st.column_config.CheckboxColumn("أرسل اقتباس (آخر)؟"),
-                    # Configure other columns
-                    common_minutes_col_name: st.column_config.TextColumn("مدة قراءة (مشترك)"),
-                    other_minutes_col_name: st.column_config.TextColumn("مدة قراءة (آخر)"),
+                    'quote_common': st.column_config.CheckboxColumn("اقتباس مشترك؟"),
+                    'quote_other': st.column_config.CheckboxColumn("اقتباس آخر؟"),
+                    common_minutes_col_name: st.column_config.TextColumn("دقائق (مشترك)"),
+                    other_minutes_col_name: st.column_config.TextColumn("دقائق (آخر)"),
                     date_col_name: st.column_config.TextColumn("تاريخ القراءة"),
-                    # Disable editing for identifiers
                     name_col_name: st.column_config.TextColumn("الاسم", disabled=True),
                     timestamp_col_name: st.column_config.TextColumn("ختم الوقت", disabled=True),
-                    'sheet_row_index': None, # Hide the helper index column
+                    'sheet_row_index': None,
                 },
-                use_container_width=True,
-                height=500,
-                hide_index=True
+                use_container_width=True, height=500, hide_index=True
             )
 
             if st.button("💾 حفظ التعديلات في Google Sheet", use_container_width=True, type="primary"):
-                with st.spinner("جاري حفظ التغييرات... قد تستغرق العملية بعض الوقت."):
+                with st.spinner("جاري حفظ التغييرات..."):
                     try:
                         spreadsheet = gc.open_by_url(spreadsheet_url)
                         worksheet = spreadsheet.worksheet("Form Responses 1")
                         sheet_headers = worksheet.row_values(1)
 
-                        # Find column indices (1-based)
                         achievements_col_idx = sheet_headers.index(achievements_col_name) + 1
                         quotes_col_idx = sheet_headers.index(quotes_col_name) + 1
                         
@@ -1237,16 +1304,14 @@ elif page == "⚙️ الإدارة والإعدادات":
                             st.info("لم يتم العثور على أي تغييرات لحفظها.")
                         else:
                             updates_count = 0
-                            # Iterate through only the changed rows
-                            changed_indices = changes.index
+                            changed_indices = changes.index.unique()
+                            
+                            batch_updates = []
                             for idx in changed_indices:
                                 original_row = original_df.loc[idx]
                                 edited_row = edited_df.loc[idx]
                                 sheet_row_to_update = original_row['sheet_row_index']
                                 
-                                batch_updates = []
-
-                                # --- Post-processing for Checkboxes ---
                                 ACH_OPTIONS = {'ach_finish_common': 'أنهيت الكتاب المشترك', 'ach_finish_other': 'أنهيت كتاباً آخر', 'ach_attend_discussion': 'حضرت جلسة النقاش'}
                                 QUOTE_OPTIONS = {'quote_common': 'أرسلت اقتباساً من الكتاب المشترك', 'quote_other': 'أرسلت اقتباساً من كتاب آخر'}
 
@@ -1256,32 +1321,29 @@ elif page == "⚙️ الإدارة والإعدادات":
                                 new_quote_list = [text for key, text in QUOTE_OPTIONS.items() if edited_row[key]]
                                 new_quote_str = ", ".join(new_quote_list)
 
-                                # Add checkbox columns to batch update if they changed
                                 if new_ach_str != original_row[achievements_col_name]:
                                     batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, achievements_col_idx)}', 'values': [[new_ach_str]]})
                                 
                                 if new_quote_str != original_row[quotes_col_name]:
                                     batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, quotes_col_idx)}', 'values': [[new_quote_str]]})
 
-                                # Check other editable columns for changes
                                 simple_cols = {date_col_name: 'تاريخ القراءة', common_minutes_col_name: 'مدة قراءة (مشترك)', other_minutes_col_name: 'مدة قراءة (آخر)'}
                                 for sheet_col, display_col in simple_cols.items():
                                     if str(original_row[sheet_col]) != str(edited_row[sheet_col]):
                                         col_idx = sheet_headers.index(sheet_col) + 1
                                         batch_updates.append({'range': f'{gspread.utils.rowcol_to_a1(sheet_row_to_update, col_idx)}', 'values': [[str(edited_row[sheet_col])]]})
-
-                                if batch_updates:
-                                    worksheet.batch_update(batch_updates)
-                                    updates_count += 1
-                                    time.sleep(1.1) # Respect API rate limits
-
-                            st.success(f"✅ تم تحديث {updates_count} سجل بنجاح في Google Sheet.")
-                            st.info("سيتم الآن إعادة مزامنة التطبيق بالكامل لضمان تحديث الإحصائيات.")
-                            with st.spinner("جاري المزامنة الكاملة..."):
-                                run_data_update(gc)
-                            st.success("🎉 اكتملت المزامنة!")
+                            
+                            if batch_updates:
+                                worksheet.batch_update(batch_updates)
+                                updates_count = len(changed_indices)
+                                st.success(f"✅ تم تحديث {updates_count} سجل بنجاح في Google Sheet.")
+                                st.info("سيتم الآن إعادة مزامنة التطبيق بالكامل.")
+                                with st.spinner("جاري المزامنة الكاملة..."):
+                                    run_data_update(gc)
+                                st.success("🎉 اكتملت المزامنة!")
+                            else:
+                                st.info("لم يتم العثور على أي تغييرات لحفظها.")
                         
-                        # Clean up and rerun
                         del st.session_state.editor_data
                         if 'original_editor_data' in st.session_state:
                             del st.session_state.original_editor_data
