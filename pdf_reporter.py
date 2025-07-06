@@ -112,7 +112,7 @@ class PDFReporter(FPDF):
         self.set_text_color(0, 0, 0)
         self.multi_cell(drawable_width, 15, self._process_text("تقرير أداء\nماراثون القراءة"), align="C")
         self.set_font("Amiri", "", 24)
-        self.set_text_color(*ACCENT_COLOR) # Use accent color for subtitle
+        self.set_text_color(*ACCENT_COLOR)
         self.multi_cell(drawable_width, 20, self._process_text(report_type_title), align="C")
         self.set_y(A4_HEIGHT / 1.5)
         self.set_font("Amiri", "", 16)
@@ -124,20 +124,18 @@ class PDFReporter(FPDF):
         if not self.font_loaded: return
         self.add_page()
         title_h, section_title_h, line_h, spacing_h = 15, 10, 10, 10
-        content_height = title_h + 5 + spacing_h # Title + line + spacing
+        content_height = title_h + 5 + spacing_h
         content_height += section_title_h + (line_h * 3) + spacing_h
         content_height += section_title_h
         content_height += (line_h * len(periods_df)) + 5 + line_h if not periods_df.empty else line_h
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
-        
         self.set_font("Amiri", "", 24)
         self.set_text_color(*ACCENT_COLOR)
         self.cell(0, title_h, self._process_text("معلومات المجموعة"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(*LINE_COLOR)
         self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
         self.ln(spacing_h)
-
         self.set_text_color(0, 0, 0)
         self.set_font("Amiri", "", 18)
         self.cell(0, section_title_h, self._process_text("إحصائيات الأعضاء"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -147,7 +145,6 @@ class PDFReporter(FPDF):
             self.cell(0, line_h, self._process_text(f"• عدد الأعضاء النشطين: {group_stats.get('active', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self.cell(0, line_h, self._process_text(f"• عدد الأعضاء الخاملين: {group_stats.get('inactive', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(spacing_h)
-        
         self.set_font("Amiri", "", 18)
         self.cell(0, section_title_h, self._process_text("معلومات التحديات"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_font("Amiri", "", 14)
@@ -181,23 +178,27 @@ class PDFReporter(FPDF):
         self.image(img_file, x=x_pos, w=img_width_mm)
         return img_height_mm
 
-    def _add_kpis_page(self, data):
+    def _add_kpis_page(self, data, title="ملخص الأداء والأبطال"):
         self.add_page()
         title_h, kpi_row_h, champions_title_h, champions_row_h = 15, 20, 15, 18
-        num_champion_rows = (len(data.get('champions_data', {})) + 1) // 2
+        champions_data = data.get('champions_data', {})
+        num_champion_rows = (len(champions_data) + 1) // 2 if champions_data else 0
         content_height = title_h + 5 + (kpi_row_h * 2) + 15
-        content_height += champions_title_h + (champions_row_h * num_champion_rows) + (10 * (num_champion_rows - 1))
+        if champions_data:
+            content_height += champions_title_h + (champions_row_h * num_champion_rows) + (10 * (num_champion_rows - 1))
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
         self.set_font("Amiri", "", 24)
         self.set_text_color(*ACCENT_COLOR)
-        self.cell(0, title_h, self._process_text("ملخص الأداء والأبطال"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, title_h, self._process_text(title), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(*LINE_COLOR)
         self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
         self.set_text_color(0,0,0)
         self.add_kpi_row(data.get('kpis_main', {}))
-        self.add_kpi_row(data.get('kpis_secondary', {}))
-        self.add_champions_section(data.get('champions_data', {}))
+        if data.get('kpis_secondary'):
+            self.add_kpi_row(data.get('kpis_secondary', {}))
+        if champions_data:
+            self.add_champions_section(champions_data)
 
     def _add_single_plot_page(self, fig, title):
         self.add_page()
@@ -229,7 +230,6 @@ class PDFReporter(FPDF):
         content_height = (img_height1_mm + img_height2_mm) + 45
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
-        
         self.set_font("Amiri", "", 24)
         self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 10, self._process_text(title1), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -239,7 +239,6 @@ class PDFReporter(FPDF):
         self.set_text_color(0,0,0)
         self.add_plot(fig1, width_percent=85)
         self.ln(10)
-
         self.set_font("Amiri", "", 24)
         self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 10, self._process_text(title2), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -307,44 +306,51 @@ class PDFReporter(FPDF):
     def add_challenge_title_page(self, title, author, period, duration):
         if not self.font_loaded: return
         self.add_page()
+        drawable_width = self.w - self.l_margin - self.r_margin
+        content_height = (15 * 2) + 15 + (10 * 3) # Title, spacing, and 3 lines of info
+        top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
+        self.set_y(top_margin)
         self.set_font("Amiri", "", 28)
         self.set_text_color(*ACCENT_COLOR)
-        self.set_y(A4_HEIGHT / 4)
-        self.multi_cell(0, 15, self._process_text(f"تقرير تحدي:\n{title}"), align="C")
+        self.multi_cell(drawable_width, 15, self._process_text(f"تقرير تحدي:\n{title}"), align="C")
         self.ln(15)
         self.set_font("Amiri", "", 16)
         self.set_text_color(80, 80, 80)
-        self.cell(0, 10, self._process_text(f"تأليف: {author}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.cell(0, 10, self._process_text(f"الفترة: {period}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.cell(0, 10, self._process_text(f"مدة التحدي: {duration} يوم"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.multi_cell(drawable_width, 10, self._process_text(f"تأليف: {author}"), align="C")
+        self.multi_cell(drawable_width, 10, self._process_text(f"الفترة: {period}"), align="C")
+        self.multi_cell(drawable_width, 10, self._process_text(f"مدة التحدي: {duration} يوم"), align="C")
 
     def add_participants_page(self, all_participants, finishers, attendees):
         if not self.font_loaded: return
         self.add_page()
+        title_h, header_h, line_h, spacing_h = 15, 10, 8, 10
+        max_len = max(len(all_participants), len(finishers), len(attendees))
+        content_height = title_h + 5 + spacing_h + header_h + 15 + (line_h * max_len)
+        top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
+        self.set_y(top_margin)
         self.set_font("Amiri", "", 24)
         self.set_text_color(*ACCENT_COLOR)
-        self.cell(0, 15, self._process_text("المشاركون في التحدي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, title_h, self._process_text("المشاركون في التحدي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(*LINE_COLOR)
         self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
-        self.ln(10)
+        self.ln(spacing_h)
+        self.set_text_color(0, 0, 0)
         page_w = self.w - self.l_margin - self.r_margin
         col_w = page_w / 3
         self.set_font("Amiri", "", 14)
-        self.set_text_color(0,0,0)
-        self.cell(col_w, 10, self._process_text("من حضروا النقاش"), border='B', align="C")
-        self.cell(col_w, 10, self._process_text("من أنهوا الكتاب"), border='B', align="C")
-        self.cell(col_w, 10, self._process_text("جميع المشاركين"), border='B', align="C")
+        self.cell(col_w, header_h, self._process_text("من حضروا النقاش"), border='B', align="C")
+        self.cell(col_w, header_h, self._process_text("من أنهوا الكتاب"), border='B', align="C")
+        self.cell(col_w, header_h, self._process_text("جميع المشاركين"), border='B', align="C")
         self.ln(15)
         self.set_font("Amiri", "", 11)
         self.set_text_color(50,50,50)
-        max_len = max(len(all_participants), len(finishers), len(attendees))
         for i in range(max_len):
             p_name = all_participants[i] if i < len(all_participants) else ""
             f_name = finishers[i] if i < len(finishers) else ""
             a_name = attendees[i] if i < len(attendees) else ""
-            self.cell(col_w, 8, self._process_text(a_name), align="C")
-            self.cell(col_w, 8, self._process_text(f_name), align="C")
-            self.cell(col_w, 8, self._process_text(p_name), align="C")
+            self.cell(col_w, line_h, self._process_text(a_name), align="C")
+            self.cell(col_w, line_h, self._process_text(f_name), align="C")
+            self.cell(col_w, line_h, self._process_text(p_name), align="C")
             self.ln()
 
     def add_challenge_report(self, data: dict):
@@ -357,6 +363,6 @@ class PDFReporter(FPDF):
             all_participants=data.get('all_participants', []),
             finishers=data.get('finishers', []), attendees=data.get('attendees', [])
         )
-        self._add_kpis_page({"kpis_main": data.get('kpis', {}), "champions_data": {}}) # Re-use kpi page
+        self._add_kpis_page({"kpis_main": data.get('kpis', {})}, title="ملخص الأداء")
         self._add_single_plot_page(data.get('fig_area'), "مجموع ساعات القراءة التراكمي")
         self._add_dual_plot_page(data.get('fig_hours'), "ساعات قراءة الأعضاء", data.get('fig_points'), "نقاط الأعضاء")
