@@ -14,8 +14,9 @@ FONT_NAME = "Amiri-Regular.ttf"
 COVER_IMAGE = "cover_page.png"
 A4_WIDTH = 210
 A4_HEIGHT = 297
-PLOT_IMAGE_WIDTH_MM = 170 # Default width for a plot image in mm
-PLOT_IMAGE_HEIGHT_MM = 106 # Default height for a plot image in mm
+# --- AESTHETIC IMPROVEMENT ---
+ACCENT_COLOR = (41, 128, 185) # A professional blue color
+LINE_COLOR = (200, 200, 200) # A light gray for separator lines
 
 class PDFReporter(FPDF):
     """
@@ -47,7 +48,7 @@ class PDFReporter(FPDF):
         try:
             img = Image.open(COVER_IMAGE).convert("RGBA")
             background = Image.new("RGBA", img.size, (255, 255, 255))
-            alpha = img.getchannel('A').point(lambda i: i * 0.5) # 50% opacity
+            alpha = img.getchannel('A').point(lambda i: i * 0.5)
             img.putalpha(alpha)
             background.paste(img, (0, 0), img)
             buffer = io.BytesIO()
@@ -88,32 +89,15 @@ class PDFReporter(FPDF):
         return self.h - self.t_margin - self.b_margin
 
     def _style_figure_for_arabic(self, fig: go.Figure):
-        """
-        Applies all necessary styling to a Plotly figure for correct Arabic rendering.
-        This is the FIX for the missing axes and misplaced titles.
-        """
         if not self.font_loaded: return fig
-
         fig.update_layout(
             font=dict(family="Amiri", size=12, color="black"),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            title=dict(
-                font=dict(family="Amiri", size=18, color="black"),
-                x=0.5,
-                pad=dict(b=15) # Add padding to the bottom of the title
-            ),
-            xaxis=dict(
-                title=dict(font=dict(family="Amiri", size=14, color="black")),
-                tickfont=dict(family="Amiri", size=12, color="black"), # FIX: Style axis numbers/labels
-                showgrid=True, gridcolor="lightgray", gridwidth=0.5
-            ),
-            yaxis=dict(
-                title=dict(font=dict(family="Amiri", size=14, color="black")),
-                tickfont=dict(family="Amiri", size=12, color="black"), # FIX: Style axis numbers/labels
-                showgrid=True, gridcolor="lightgray", gridwidth=0.5
-            ),
-            margin=dict(l=60, r=60, t=80, b=60) # Ensure enough margin for titles
+            title=dict(font=dict(family="Amiri", size=18, color="black"), x=0.5, pad=dict(b=15)),
+            xaxis=dict(title=dict(font=dict(family="Amiri", size=14, color="black")), tickfont=dict(family="Amiri", size=12, color="black"), showgrid=True, gridcolor="lightgray", gridwidth=0.5),
+            yaxis=dict(title=dict(font=dict(family="Amiri", size=14, color="black")), tickfont=dict(family="Amiri", size=12, color="black"), showgrid=True, gridcolor="lightgray", gridwidth=0.5),
+            margin=dict(l=60, r=60, t=80, b=60)
         )
         return fig
 
@@ -128,10 +112,11 @@ class PDFReporter(FPDF):
         self.set_text_color(0, 0, 0)
         self.multi_cell(drawable_width, 15, self._process_text("تقرير أداء\nماراثون القراءة"), align="C")
         self.set_font("Amiri", "", 24)
-        self.set_text_color(80, 80, 80)
+        self.set_text_color(*ACCENT_COLOR) # Use accent color for subtitle
         self.multi_cell(drawable_width, 20, self._process_text(report_type_title), align="C")
         self.set_y(A4_HEIGHT / 1.5)
         self.set_font("Amiri", "", 16)
+        self.set_text_color(0, 0, 0)
         today_str = datetime.now().strftime("%Y-%m-%d")
         self.multi_cell(drawable_width, 10, self._process_text(f"تاريخ التصدير: {today_str}"), align="C")
 
@@ -139,15 +124,21 @@ class PDFReporter(FPDF):
         if not self.font_loaded: return
         self.add_page()
         title_h, section_title_h, line_h, spacing_h = 15, 10, 10, 10
-        content_height = title_h + spacing_h
+        content_height = title_h + 5 + spacing_h # Title + line + spacing
         content_height += section_title_h + (line_h * 3) + spacing_h
         content_height += section_title_h
         content_height += (line_h * len(periods_df)) + 5 + line_h if not periods_df.empty else line_h
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
+        
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, title_h, self._process_text("معلومات المجموعة"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
         self.ln(spacing_h)
+
+        self.set_text_color(0, 0, 0)
         self.set_font("Amiri", "", 18)
         self.cell(0, section_title_h, self._process_text("إحصائيات الأعضاء"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_font("Amiri", "", 14)
@@ -156,6 +147,7 @@ class PDFReporter(FPDF):
             self.cell(0, line_h, self._process_text(f"• عدد الأعضاء النشطين: {group_stats.get('active', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self.cell(0, line_h, self._process_text(f"• عدد الأعضاء الخاملين: {group_stats.get('inactive', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(spacing_h)
+        
         self.set_font("Amiri", "", 18)
         self.cell(0, section_title_h, self._process_text("معلومات التحديات"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_font("Amiri", "", 14)
@@ -176,10 +168,7 @@ class PDFReporter(FPDF):
 
     def add_plot(self, fig: go.Figure, width_percent=90):
         if not self.font_loaded or not fig: return None, 0
-        
-        # Apply the Arabic styling fix
         styled_fig = self._style_figure_for_arabic(fig)
-
         img_bytes = styled_fig.to_image(format="png", scale=2, width=800, height=500)
         img_file = io.BytesIO(img_bytes)
         pil_img = Image.open(img_file)
@@ -196,56 +185,68 @@ class PDFReporter(FPDF):
         self.add_page()
         title_h, kpi_row_h, champions_title_h, champions_row_h = 15, 20, 15, 18
         num_champion_rows = (len(data.get('champions_data', {})) + 1) // 2
-        content_height = title_h + (kpi_row_h * 2) + 15
+        content_height = title_h + 5 + (kpi_row_h * 2) + 15
         content_height += champions_title_h + (champions_row_h * num_champion_rows) + (10 * (num_champion_rows - 1))
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, title_h, self._process_text("ملخص الأداء والأبطال"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
+        self.set_text_color(0,0,0)
         self.add_kpi_row(data.get('kpis_main', {}))
         self.add_kpi_row(data.get('kpis_secondary', {}))
         self.add_champions_section(data.get('champions_data', {}))
 
     def _add_single_plot_page(self, fig, title):
         self.add_page()
-        # Recalculate plot height dynamically
         pil_img = Image.open(io.BytesIO(fig.to_image(format="png", scale=2, width=800, height=500)))
         aspect_ratio = pil_img.height / pil_img.width
         page_width = self.w - self.l_margin - self.r_margin
         img_width_mm = page_width * 0.85
         img_height_mm = img_width_mm * aspect_ratio
-        
-        content_height = img_height_mm + 15 # Plot height + title height
+        content_height = img_height_mm + 20
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 10, self._process_text(title), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(5)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
+        self.ln(10)
+        self.set_text_color(0,0,0)
         self.add_plot(fig, width_percent=85)
 
     def _add_dual_plot_page(self, fig1, title1, fig2, title2):
         self.add_page()
-        # Recalculate plot heights dynamically
-        pil_img1 = Image.open(io.BytesIO(fig1.to_image(format="png", scale=2, width=800, height=500)))
-        aspect_ratio1 = pil_img1.height / pil_img1.width
-        pil_img2 = Image.open(io.BytesIO(fig2.to_image(format="png", scale=2, width=800, height=500)))
-        aspect_ratio2 = pil_img2.height / pil_img2.width
         page_width = self.w - self.l_margin - self.r_margin
         img_width_mm = page_width * 0.85
-        img_height1_mm = img_width_mm * aspect_ratio1
-        img_height2_mm = img_width_mm * aspect_ratio2
-
-        content_height = (img_height1_mm + img_height2_mm) + 40 # 2 plots + titles + spacing
+        pil_img1 = Image.open(io.BytesIO(fig1.to_image(format="png", scale=2, width=800, height=500)))
+        img_height1_mm = img_width_mm * (pil_img1.height / pil_img1.width)
+        pil_img2 = Image.open(io.BytesIO(fig2.to_image(format="png", scale=2, width=800, height=500)))
+        img_height2_mm = img_width_mm * (pil_img2.height / pil_img2.width)
+        content_height = (img_height1_mm + img_height2_mm) + 45
         top_margin = (self._get_drawable_height() - content_height) / 2 + self.t_margin
         self.set_y(top_margin)
+        
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 10, self._process_text(title1), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(5)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
+        self.ln(10)
+        self.set_text_color(0,0,0)
         self.add_plot(fig1, width_percent=85)
         self.ln(10)
+
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 10, self._process_text(title2), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(5)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
+        self.ln(10)
+        self.set_text_color(0,0,0)
         self.add_plot(fig2, width_percent=85)
 
     def add_kpi_row(self, kpis: dict):
@@ -303,12 +304,11 @@ class PDFReporter(FPDF):
         self._add_dual_plot_page(data.get('fig_donut'), "تركيز القراءة", data.get('fig_bar_days'), "أيام النشاط")
         self._add_dual_plot_page(data.get('fig_points_leaderboard'), "المتصدرون بالنقاط", data.get('fig_hours_leaderboard'), "المتصدرون بالساعات")
 
-    # --- Challenge Report Methods (Unchanged) ---
     def add_challenge_title_page(self, title, author, period, duration):
         if not self.font_loaded: return
         self.add_page()
         self.set_font("Amiri", "", 28)
-        self.set_text_color(0, 0, 0)
+        self.set_text_color(*ACCENT_COLOR)
         self.set_y(A4_HEIGHT / 4)
         self.multi_cell(0, 15, self._process_text(f"تقرير تحدي:\n{title}"), align="C")
         self.ln(15)
@@ -322,7 +322,10 @@ class PDFReporter(FPDF):
         if not self.font_loaded: return
         self.add_page()
         self.set_font("Amiri", "", 24)
+        self.set_text_color(*ACCENT_COLOR)
         self.cell(0, 15, self._process_text("المشاركون في التحدي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_draw_color(*LINE_COLOR)
+        self.line(self.l_margin, self.get_y() + 2, self.w - self.r_margin, self.get_y() + 2)
         self.ln(10)
         page_w = self.w - self.l_margin - self.r_margin
         col_w = page_w / 3
@@ -354,16 +357,6 @@ class PDFReporter(FPDF):
             all_participants=data.get('all_participants', []),
             finishers=data.get('finishers', []), attendees=data.get('attendees', [])
         )
-        self.add_page()
-        self.set_font("Amiri", "", 24)
-        self.cell(0, 15, self._process_text("ملخص الأداء"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.add_kpi_row(data.get('kpis', {}))
-        self.ln(5)
-        self.add_plot(data.get('fig_area'))
-        self.add_page()
-        self.set_font("Amiri", "", 24)
-        self.cell(0, 15, self._process_text("لوحات الصدارة"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(5)
-        self.add_plot(data.get('fig_hours'))
-        self.ln(15)
-        self.add_plot(data.get('fig_points'))
+        self._add_kpis_page({"kpis_main": data.get('kpis', {}), "champions_data": {}}) # Re-use kpi page
+        self._add_single_plot_page(data.get('fig_area'), "مجموع ساعات القراءة التراكمي")
+        self._add_dual_plot_page(data.get('fig_hours'), "ساعات قراءة الأعضاء", data.get('fig_points'), "نقاط الأعضاء")
