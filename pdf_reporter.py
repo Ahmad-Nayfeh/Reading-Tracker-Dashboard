@@ -279,7 +279,7 @@ class PDFReporter(FPDF):
 
     def add_kpi_row(self, kpis: dict):
         """Adds a row of Key Performance Indicators."""
-        if not self.font_loaded: return
+        if not self.font_loaded or not kpis: return
         self.ln(10)
         col_width = (self.w - self.l_margin - self.r_margin) / len(kpis)
         
@@ -292,35 +292,48 @@ class PDFReporter(FPDF):
         self.set_font("Amiri", "", 20)
         self.set_text_color(0, 0, 0)
         for label, value in kpis.items():
-            self.cell(col_width, 10, self._process_text(value), align="C")
+            self.cell(col_width, 10, self._process_text(str(value)), align="C")
         self.ln(15)
 
-    def add_dataframe(self, df: pd.DataFrame):
-        """Adds a Pandas DataFrame as a table to the PDF."""
-        if not self.font_loaded: return
+    def add_champions_section(self, champions_data: dict):
+        """Adds a formatted section for marathon champions."""
+        if not self.font_loaded or not champions_data: return
         self.ln(5)
-        self.set_font("Amiri", "", 10)
+        self.set_font("Amiri", "", 20)
+        self.set_text_color(0, 0, 0)
+        self.cell(0, 15, self._process_text("أبطال الماراثون"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(5)
         
         page_width = self.w - self.l_margin - self.r_margin
-        num_cols = len(df.columns)
-        col_widths = [page_width / num_cols] * num_cols
+        col_width = page_width / 2
+        
+        champions_list = list(champions_data.items())
+        for i in range(0, len(champions_list), 2):
+            y_pos = self.get_y()
+            
+            # --- First Champion in Row ---
+            self.set_font("Amiri", "", 12)
+            self.set_text_color(80, 80, 80)
+            self.multi_cell(col_width, 8, self._process_text(champions_list[i][0]), align="C")
+            
+            self.set_xy(self.l_margin, self.get_y())
+            self.set_font("Amiri", "", 16)
+            self.set_text_color(0, 0, 0)
+            self.multi_cell(col_width, 10, self._process_text(champions_list[i][1]), align="C")
 
-        self.set_fill_color(200, 200, 200)
-        self.set_text_color(0,0,0)
-        self.set_font("Amiri", "", 11)
-        for i, col_name in enumerate(df.columns):
-            self.cell(col_widths[i], 10, self._process_text(col_name), border=1, fill=True, align="C")
-        self.ln()
+            # --- Second Champion in Row (if exists) ---
+            if i + 1 < len(champions_list):
+                self.set_xy(self.l_margin + col_width, y_pos)
+                self.set_font("Amiri", "", 12)
+                self.set_text_color(80, 80, 80)
+                self.multi_cell(col_width, 8, self._process_text(champions_list[i+1][0]), align="C")
 
-        self.set_text_color(0,0,0)
-        self.set_font("Amiri", "", 10)
-        self.set_fill_color(250, 250, 250)
-        fill = False
-        for index, row in df.iterrows():
-            for i, item in enumerate(row):
-                self.cell(col_widths[i], 10, self._process_text(item), border=1, align="C", fill=fill)
-            self.ln()
-            fill = not fill
+                self.set_xy(self.l_margin + col_width, self.get_y())
+                self.set_font("Amiri", "", 16)
+                self.set_text_color(0, 0, 0)
+                self.multi_cell(col_width, 10, self._process_text(champions_list[i+1][1]), align="C")
+            
+            self.ln(10)
         self.ln(10)
         
     def add_dashboard_report(self, data: dict):
@@ -328,29 +341,48 @@ class PDFReporter(FPDF):
         if not self.font_loaded: return
         self.add_section_divider("تحليل لوحة التحكم العامة")
         
+        # --- Page 1: KPIs and Champions ---
         self.add_page()
         self.set_font("Amiri", "", 24)
         self.cell(0, 15, self._process_text("مؤشرات الأداء الرئيسية"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.add_kpi_row(data['kpis_main'])
-        self.add_kpi_row(data['kpis_secondary'])
+        self.add_kpi_row(data.get('kpis_main', {}))
+        self.add_kpi_row(data.get('kpis_secondary', {}))
+        self.add_champions_section(data.get('champions_data', {}))
         
-        self.set_font("Amiri", "", 18)
-        self.cell(0, 15, self._process_text("نمو القراءة التراكمي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        # استخدام الدالة المحسنة مع العناوين
+        # --- Page 2: Growth Chart ---
+        self.add_page()
         self.add_plot(
-            data['fig_growth'], 
+            data.get('fig_growth'), 
             title="نمو القراءة التراكمي",
             x_title="التاريخ",
-            y_title="عدد الساعات"
+            y_title="مجموع الساعات"
         )
 
+        # --- Page 3: Donut and Bar Chart ---
         self.add_page()
-        self.set_font("Amiri", "", 18)
-        self.cell(0, 15, self._process_text("المتصدرون بالنقاط"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        if not data['points_leaderboard_df'].empty:
-            self.add_dataframe(data['points_leaderboard_df'])
-        
-        self.set_font("Amiri", "", 18)
-        self.cell(0, 15, self._process_text("المتصدرون بالساعات"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        if not data['hours_leaderboard_df'].empty:
-            self.add_dataframe(data['hours_leaderboard_df'])
+        self.add_plot(
+            data.get('fig_donut'), 
+            title="تركيز القراءة",
+            width_percent=70
+        )
+        self.ln(10)
+        self.add_plot(
+            data.get('fig_bar_days'), 
+            title="أيام النشاط",
+            y_title="الساعات",
+            width_percent=80
+        )
+
+        # --- Page 4: Leaderboard Charts ---
+        self.add_page()
+        self.add_plot(
+            data.get('fig_points_leaderboard'),
+            title="المتصدرون بالنقاط",
+            x_title="النقاط"
+        )
+        self.ln(10)
+        self.add_plot(
+            data.get('fig_hours_leaderboard'),
+            title="المتصدرون بالساعات",
+            x_title="الساعات"
+        )
