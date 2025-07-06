@@ -644,19 +644,33 @@ if page == "📈 لوحة التحكم العامة":
 
                 # Add content based on selection
                 if "dashboard" in report_key:
+                    # Prepare the champions data dictionary
+                    champions_data = {}
+                    if king_of_reading is not None:
+                        champions_data["👑 ملك القراءة"] = king_of_reading['name']
+                    if king_of_points is not None:
+                        champions_data["⭐ ملك النقاط"] = king_of_points['name']
+                    if king_of_books is not None:
+                        champions_data["📚 ملك الكتب"] = king_of_books['name']
+                    if king_of_quotes is not None:
+                        champions_data["✍️ ملك الاقتباسات"] = king_of_quotes['name']
+
+                    # Prepare the final data dictionary for the reporter
                     dashboard_data = {
                         "kpis_main": kpis_main,
                         "kpis_secondary": kpis_secondary,
+                        "champions_data": champions_data,
                         "fig_growth": fig_growth,
-                        "points_leaderboard_df": points_leaderboard_df,
-                        "hours_leaderboard_df": hours_leaderboard_df
+                        "fig_donut": fig_donut,
+                        "fig_bar_days": fig_bar_days,
+                        "fig_points_leaderboard": fig_points_leaderboard,
+                        "fig_hours_leaderboard": fig_hours_leaderboard
                     }
                     pdf.add_dashboard_report(dashboard_data)
 
                 # --- Placeholder for other report sections ---
                 # if "challenge" in report_key: ...
                 # if "readers" in report_key: ...
-
 
                 pdf_output = bytes(pdf.output())
                 st.session_state.pdf_file = pdf_output
