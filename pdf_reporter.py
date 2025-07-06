@@ -1,6 +1,6 @@
 import streamlit as st
 from fpdf import FPDF, XPos, YPos
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import plotly.graph_objects as go
 import io
@@ -92,6 +92,7 @@ class PDFReporter(FPDF):
     def footer(self):
         """Adds a footer with page number to each page."""
         if not self.font_loaded: return
+        # Page number is only added after the cover page (page_no() > 1)
         if self.page_no() > 1:
             self.set_y(-15)
             self.set_font("Amiri", "", 10)
@@ -101,43 +102,79 @@ class PDFReporter(FPDF):
             self.set_y(-15)
             self.cell(0, 10, self._process_text("تقرير ماراثون القراءة"), align="R")
 
-    def add_cover_page(self):
-        """Adds the main cover page of the report."""
+    def add_cover_page(self, report_type_title):
+        """
+        Adds the main cover page of the report, including the report type.
+        This function now combines the cover and the section divider.
+        """
         if not self.font_loaded: return
         self.add_page()
+        
+        # --- FIX ---
+        # Calculate the drawable width of the page to avoid ambiguity
+        drawable_width = self.w - self.l_margin - self.r_margin
+
         self.set_font("Amiri", "", 36)
         self.set_text_color(0, 0, 0)
-        self.set_y(A4_HEIGHT / 3)
-        self.multi_cell(0, 15, self._process_text("تقرير أداء\nماراثون القراءة"), align="C")
+        self.set_y(A4_HEIGHT / 3.5)
+        self.multi_cell(drawable_width, 15, self._process_text("تقرير أداء\nماراثون القراءة"), align="C")
+        
+        self.set_font("Amiri", "", 24)
+        self.set_text_color(80, 80, 80)
+        self.multi_cell(drawable_width, 20, self._process_text(report_type_title), align="C")
         
         self.set_font("Amiri", "", 16)
         self.set_y(A4_HEIGHT / 1.5)
         today_str = datetime.now().strftime("%Y-%m-%d")
-        self.multi_cell(0, 10, self._process_text(f"تاريخ التصدير: {today_str}"), align="C")
+        self.multi_cell(drawable_width, 10, self._process_text(f"تاريخ التصدير: {today_str}"), align="C")
 
-    def add_table_of_contents(self, toc_items):
-        """Adds a table of contents page."""
+    def add_group_info_page(self, group_stats, periods_df):
+        """
+        Adds a new page with general information about the group and its challenges.
+        """
         if not self.font_loaded: return
         self.add_page()
-        self.set_font("Amiri", "", 28)
-        self.set_text_color(0, 0, 0)
-        self.set_y(30)
-        self.cell(0, 15, self._process_text("فهرس المحتويات"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(20)
+        self.set_font("Amiri", "", 24)
+        self.cell(0, 15, self._process_text("معلومات المجموعة"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(10)
 
+        # Member Statistics Section
         self.set_font("Amiri", "", 18)
-        for item in toc_items:
-            self.cell(0, 12, self._process_text(f"- {item}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
-            self.ln(5)
+        self.cell(0, 10, self._process_text("إحصائيات الأعضاء"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_font("Amiri", "", 14)
+        if group_stats:
+            self.cell(0, 10, self._process_text(f"• عدد الأعضاء الكلي: {group_stats.get('total', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.cell(0, 10, self._process_text(f"• عدد الأعضاء النشطين: {group_stats.get('active', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.cell(0, 10, self._process_text(f"• عدد الأعضاء الخاملين: {group_stats.get('inactive', 0)}"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(10)
 
-    def add_section_divider(self, title):
-        """Adds a full page dedicated to a section title."""
-        if not self.font_loaded: return
-        self.add_page()
-        self.set_font("Amiri", "", 32)
-        self.set_text_color(0, 0, 0)
-        self.set_y(A4_HEIGHT / 2.5)
-        self.multi_cell(0, 20, self._process_text(title), align="C")
+        # Challenges Section
+        self.set_font("Amiri", "", 18)
+        self.cell(0, 10, self._process_text("معلومات التحديات"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_font("Amiri", "", 14)
+        if not periods_df.empty:
+            # Sort challenges from oldest to newest
+            periods_df['start_date_dt'] = pd.to_datetime(periods_df['start_date'])
+            sorted_periods = periods_df.sort_values(by='start_date_dt', ascending=True)
+
+            for index, period in sorted_periods.iterrows():
+                challenge_title = period.get('title', 'N/A')
+                author = period.get('author', 'N/A')
+                start_date = period.get('start_date', 'N/A')
+                end_date = period.get('end_date', 'N/A')
+                info_line = f"• {challenge_title} ({author}) | الفترة: من {start_date} إلى {end_date}"
+                self.cell(0, 10, self._process_text(info_line), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            # Days since marathon started
+            first_challenge_date = sorted_periods['start_date_dt'].min().date()
+            days_since_start = (date.today() - first_challenge_date).days
+            self.ln(5)
+            self.set_font("Amiri", "", 12)
+            self.set_text_color(80, 80, 80)
+            self.cell(0, 10, self._process_text(f"عدد الأيام منذ بداية أول تحدي: {days_since_start} يوم"), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        else:
+            self.cell(0, 10, self._process_text("لا توجد تحديات مسجلة بعد."), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     def create_arabic_ready_plot(self, fig: go.Figure, title="", x_title="", y_title=""):
         """
@@ -278,25 +315,34 @@ class PDFReporter(FPDF):
         self.ln(10)
         
     def add_dashboard_report(self, data: dict):
-        """Adds the full general dashboard report section."""
+        """Adds the full general dashboard report section with the new structure."""
         if not self.font_loaded: return
-        self.add_section_divider("تحليل لوحة التحكم العامة")
         
+        # Step 1: Add the new combined cover page
+        self.add_cover_page("تحليل لوحة التحكم العامة")
+
+        # Step 2: Add the new group information page
+        self.add_group_info_page(data.get('group_stats'), data.get('periods_df'))
+        
+        # Step 3: Add the KPIs and Champions page
         self.add_page()
         self.set_font("Amiri", "", 24)
-        self.cell(0, 15, self._process_text("مؤشرات الأداء الرئيسية"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 15, self._process_text("ملخص الأداء والأبطال"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.add_kpi_row(data.get('kpis_main', {}))
         self.add_kpi_row(data.get('kpis_secondary', {}))
         self.add_champions_section(data.get('champions_data', {}))
         
+        # Step 4: Add the cumulative growth chart page
         self.add_page()
         self.add_plot(data.get('fig_growth'), title="نمو القراءة التراكمي", x_title="التاريخ", y_title="مجموع الساعات")
 
+        # Step 5: Add the page with two charts (focus and activity)
         self.add_page()
         self.add_plot(data.get('fig_donut'), title="تركيز القراءة", width_percent=70)
         self.ln(10)
         self.add_plot(data.get('fig_bar_days'), title="أيام النشاط", x_title="أيام الأسبوع", y_title="الساعات", width_percent=80)
 
+        # Step 6: Add the page with leaderboards
         self.add_page()
         self.add_plot(data.get('fig_points_leaderboard'), title="المتصدرون بالنقاط", x_title="النقاط")
         self.ln(10)
