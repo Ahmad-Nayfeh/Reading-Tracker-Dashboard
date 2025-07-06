@@ -578,13 +578,23 @@ if page == "📈 لوحة التحكم العامة":
     with col_days:
         st.subheader("📅 أيام النشاط")
         if not logs_df.empty:
-            weekday_map_ar = {"Saturday": "س", "Sunday": "ح", "Monday": "ن", "Tuesday": "ث", "Wednesday": "ر", "Thursday": "خ", "Friday": "ج"}
-            weekday_order_ar = ["ج", "خ", "ر", "ث", "ن", "ح", "س"]
+            weekday_map_ar = {"Saturday": "السبت", "Sunday": "الأحد", "Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"}
+            weekday_order_ar = ["الجمعة", "الخميس", "الأربعاء", "الثلاثاء", "الاثنين", "الأحد", "السبت"]
             logs_df['weekday_ar'] = logs_df['weekday_name'].map(weekday_map_ar)
             daily_activity_hours = (logs_df.groupby('weekday_ar')['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
+            
+            # إنشاء المخطط بدون استخدام labels
             fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, 
-                                  labels={'x': '', 'y': 'الساعات'}, color_discrete_sequence=['#1abc9c'])
-            fig_bar_days.update_layout(margin=dict(t=20, b=0, l=0, r=0), title='', yaxis={'side': 'right'})
+                                  color_discrete_sequence=['#1abc9c'])
+            
+            # تحديد العناوين وكل شيء آخر مباشرة في update_layout لضمان التطبيق
+            fig_bar_days.update_layout(
+                margin=dict(t=20, b=0, l=0, r=0), 
+                title='', 
+                yaxis={'side': 'right'},
+                xaxis_title="أيام الأسبوع",
+                yaxis_title="الساعات"
+            )
             st.plotly_chart(fig_bar_days, use_container_width=True)
         else:
             st.info("لا توجد بيانات.")
