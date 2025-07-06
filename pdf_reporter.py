@@ -369,6 +369,7 @@ class PDFReporter(FPDF):
         self.add_plot(
             data.get('fig_bar_days'), 
             title="أيام النشاط",
+            x_title="أيام الأسبوع",
             y_title="الساعات",
             width_percent=80
         )
