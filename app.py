@@ -627,6 +627,14 @@ if page == "📈 لوحة التحكم العامة":
         else:
             st.info("لا توجد بيانات.")
     
+
+    # --- NEW SECTION: Prepare data for the new Group Info page in the PDF ---
+    group_stats_for_pdf = {
+        "total": len(members_df),
+        "active": len(members_df[members_df['is_active'] == 1]),
+        "inactive": len(members_df[members_df['is_active'] == 0]),
+    }
+    
     # --- NEW SECTION: PDF EXPORT ---
     st.markdown("---")
     with st.expander("🖨️ تصدير تقرير الأداء (PDF)"):
@@ -635,8 +643,9 @@ if page == "📈 لوحة التحكم العامة":
         if st.button("🚀 إنشاء وتصدير تقرير لوحة التحكم", use_container_width=True, type="primary"):
             with st.spinner("جاري إنشاء التقرير..."):
                 pdf = PDFReporter()
-                pdf.add_cover_page()
-                pdf.add_table_of_contents(["تحليل لوحة التحكم العامة"])
+                
+                # تم حذف الأسطر القديمة لإنشاء الغلاف والفهرس
+                # لأن دالة add_dashboard_report تقوم بكل شيء الآن
 
                 champions_data = {}
                 if king_of_reading is not None: champions_data["👑 ملك القراءة"] = king_of_reading['name']
@@ -652,7 +661,10 @@ if page == "📈 لوحة التحكم العامة":
                     "fig_donut": fig_donut,
                     "fig_bar_days": fig_bar_days,
                     "fig_points_leaderboard": fig_points_leaderboard,
-                    "fig_hours_leaderboard": fig_hours_leaderboard
+                    "fig_hours_leaderboard": fig_hours_leaderboard,
+                    # --- الإضافة الجديدة هنا ---
+                    "group_stats": group_stats_for_pdf, # تمرير إحصائيات المجموعة
+                    "periods_df": periods_df           # تمرير بيانات التحديات
                 }
                 pdf.add_dashboard_report(dashboard_data)
 
