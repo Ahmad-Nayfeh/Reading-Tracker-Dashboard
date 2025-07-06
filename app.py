@@ -951,8 +951,43 @@ elif page == "🎯 تحليلات التحديات":
                                 elif ach_type == 'FINISHED_OTHER_BOOK': points_source['إنهاء كتب أخرى'] = points_source.get('إنهاء كتب أخرى', 0) + period_rules.get('finish_other_book_points', 0)
                         points_source_filtered = {k: v for k, v in points_source.items() if v > 0}
                         if points_source_filtered:
-                            fig_donut = go.Figure(data=[go.Pie(labels=list(points_source_filtered.keys()), values=list(points_source_filtered.values()), hole=.5, textinfo='label+percent', insidetextorientation='radial')])
-                            fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+                            # تعريف لوحة ألوان ثابتة ومميزة لضمان تناسق الألوان
+                            color_map = {
+                                'قراءة الكتاب المشترك': '#3498db',
+                                'قراءة كتب أخرى': '#f1c40f',
+                                'اقتباسات (الكتاب المشترك)': '#2ecc71',
+                                'اقتباسات (كتب أخرى)': '#e67e22',
+                                'إنهاء الكتاب المشترك': '#9b59b6',
+                                'حضور النقاش': '#e74c3c',
+                                'إنهاء كتب أخرى': '#1abc9c'
+                            }
+                            
+                            chart_labels = list(points_source_filtered.keys())
+                            # إنشاء قائمة الألوان بنفس ترتيب الليبلات الموجودة فقط
+                            chart_colors = [color_map.get(label, '#bdc3c7') for label in chart_labels]
+
+                            fig_donut = go.Figure(data=[go.Pie(
+                                labels=chart_labels, 
+                                values=list(points_source_filtered.values()), 
+                                hole=.5, 
+                                textinfo='percent', # إظهار النسبة المئوية فقط داخل الرسم
+                                insidetextorientation='radial',
+                                marker_colors=chart_colors
+                            )])
+                            
+                            # --- التعديل هنا ---
+                            # إظهار المفتاح وتنسيقه ليظهر في الأسفل بشكل أفقي
+                            fig_donut.update_layout(
+                                showlegend=True, 
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=-0.2,
+                                    xanchor="center",
+                                    x=0.5
+                                ),
+                                margin=dict(t=20, b=50, l=20, r=20) # زيادة الهامش السفلي للمفتاح
+                            )
                             st.plotly_chart(fig_donut, use_container_width=True)
                         else: st.info("لا توجد نقاط مسجلة لعرض مصادرها.")
         
