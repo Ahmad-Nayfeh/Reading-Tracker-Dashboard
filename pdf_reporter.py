@@ -146,51 +146,34 @@ class PDFReporter(FPDF):
         if not self.font_loaded:
             return fig
         
-        # تطبيق الإعدادات المحسنة
         fig.update_layout(
             title=dict(
                 text=self._process_text(title) if title else "",
                 font=dict(family="Amiri", size=18, color="black"),
-                x=0.5,  # توسيط العنوان
-                y=0.95
+                x=0.5, y=0.95
             ),
             xaxis=dict(
-                title=dict(
-                    text=self._process_text(x_title) if x_title else "",
-                    font=dict(family="Amiri", size=14, color="black")
-                ),
+                title=dict(text=self._process_text(x_title) if x_title else "", font=dict(family="Amiri", size=14, color="black")),
                 tickfont=dict(family="Amiri", size=12, color="black"),
-                showgrid=True,
-                gridcolor="lightgray",
-                gridwidth=0.5
+                showgrid=True, gridcolor="lightgray", gridwidth=0.5
             ),
             yaxis=dict(
-                title=dict(
-                    text=self._process_text(y_title) if y_title else "",
-                    font=dict(family="Amiri", size=14, color="black")
-                ),
+                title=dict(text=self._process_text(y_title) if y_title else "", font=dict(family="Amiri", size=14, color="black")),
                 tickfont=dict(family="Amiri", size=12, color="black"),
-                showgrid=True,
-                gridcolor="lightgray",
-                gridwidth=0.5
+                showgrid=True, gridcolor="lightgray", gridwidth=0.5
             ),
             font=dict(family="Amiri", size=12, color="black"),
-            paper_bgcolor='white',
-            plot_bgcolor='white',
+            paper_bgcolor='white', plot_bgcolor='white',
             margin=dict(l=60, r=60, t=80, b=60)
         )
         
-        # معالجة البيانات النصية العربية
         for trace in fig.data:
             if hasattr(trace, 'x') and trace.x is not None:
-                if isinstance(trace.x, (list, tuple)) and len(trace.x) > 0:
-                    if isinstance(trace.x[0], str):
-                        trace.x = [self._process_text(str(x)) for x in trace.x]
-            
+                if isinstance(trace.x, (list, tuple)) and len(trace.x) > 0 and isinstance(trace.x[0], str):
+                    trace.x = [self._process_text(str(x)) for x in trace.x]
             if hasattr(trace, 'y') and trace.y is not None:
-                if isinstance(trace.y, (list, tuple)) and len(trace.y) > 0:
-                    if isinstance(trace.y[0], str):
-                        trace.y = [self._process_text(str(y)) for y in trace.y]
+                if isinstance(trace.y, (list, tuple)) and len(trace.y) > 0 and isinstance(trace.y[0], str):
+                    trace.y = [self._process_text(str(y)) for y in trace.y]
         
         return fig
 
@@ -198,76 +181,37 @@ class PDFReporter(FPDF):
         """Adds a Plotly figure to the PDF, ensuring Arabic fonts are used."""
         if not self.font_loaded: return
         if fig:
-            # تحسين الرسم البياني للعربية
             enhanced_fig = self.create_arabic_ready_plot(fig, title, x_title, y_title)
             
-            # --- تحديث إعدادات الخط للرسم البياني ---
             enhanced_fig.update_layout(
-                font=dict(
-                    family="Amiri",
-                    size=12,
-                    color="black"
-                ),
-                title=dict(
-                    font=dict(
-                        family="Amiri",
-                        size=16,
-                        color="black"
-                    )
-                ),
+                font=dict(family="Amiri", size=12, color="black"),
+                title=dict(font=dict(family="Amiri", size=16, color="black")),
                 xaxis=dict(
-                    title=dict(
-                        font=dict(
-                            family="Amiri",
-                            size=14,
-                            color="black"
-                        )
-                    ),
-                    tickfont=dict(
-                        family="Amiri",
-                        size=12,
-                        color="black"
-                    )
+                    title=dict(font=dict(family="Amiri", size=14, color="black")),
+                    tickfont=dict(family="Amiri", size=12, color="black")
                 ),
                 yaxis=dict(
-                    title=dict(
-                        font=dict(
-                            family="Amiri",
-                            size=14,
-                            color="black"
-                        )
-                    ),
-                    tickfont=dict(
-                        family="Amiri",
-                        size=12,
-                        color="black"
-                    )
+                    title=dict(font=dict(family="Amiri", size=14, color="black")),
+                    tickfont=dict(family="Amiri", size=12, color="black")
                 ),
                 paper_bgcolor='rgba(0,0,0,0)', 
                 plot_bgcolor='rgba(0,0,0,0)'
             )
             
-            # تحديث النص العربي إذا كان موجوداً
             if enhanced_fig.layout.title.text:
                 enhanced_fig.layout.title.text = self._process_text(enhanced_fig.layout.title.text)
-            
             if enhanced_fig.layout.xaxis.title.text:
                 enhanced_fig.layout.xaxis.title.text = self._process_text(enhanced_fig.layout.xaxis.title.text)
-                
             if enhanced_fig.layout.yaxis.title.text:
                 enhanced_fig.layout.yaxis.title.text = self._process_text(enhanced_fig.layout.yaxis.title.text)
             
-            # معالجة تسميات المحاور إذا كانت عربية
             if hasattr(enhanced_fig.data[0], 'x') and enhanced_fig.data[0].x is not None:
-                # للتأكد من أن تسميات المحور السيني تظهر بشكل صحيح
                 x_values = enhanced_fig.data[0].x
-                if isinstance(x_values, (list, tuple)) and len(x_values) > 0:
-                    if isinstance(x_values[0], str):
-                        processed_x = [self._process_text(str(x)) for x in x_values]
-                        enhanced_fig.data[0].x = processed_x
+                if isinstance(x_values, (list, tuple)) and len(x_values) > 0 and isinstance(x_values[0], str):
+                    processed_x = [self._process_text(str(x)) for x in x_values]
+                    enhanced_fig.data[0].x = processed_x
             
-            # إنشاء الصورة مع دقة عالية
-            img_bytes = enhanced_fig.to_image(format="png", scale=2, width=800, height=600)
+            img_bytes = enhanced_fig.to_image(format="png", scale=2, width=800, height=500)
             img_file = io.BytesIO(img_bytes)
             
             page_width = self.w - self.l_margin - self.r_margin
@@ -275,7 +219,6 @@ class PDFReporter(FPDF):
             x_pos = (self.w - img_width) / 2
             
             self.image(img_file, x=x_pos, w=img_width)
-            self.ln(5)
 
     def add_kpi_row(self, kpis: dict):
         """Adds a row of Key Performance Indicators."""
@@ -311,7 +254,6 @@ class PDFReporter(FPDF):
         for i in range(0, len(champions_list), 2):
             y_pos = self.get_y()
             
-            # --- First Champion in Row ---
             self.set_font("Amiri", "", 12)
             self.set_text_color(80, 80, 80)
             self.multi_cell(col_width, 8, self._process_text(champions_list[i][0]), align="C")
@@ -321,7 +263,6 @@ class PDFReporter(FPDF):
             self.set_text_color(0, 0, 0)
             self.multi_cell(col_width, 10, self._process_text(champions_list[i][1]), align="C")
 
-            # --- Second Champion in Row (if exists) ---
             if i + 1 < len(champions_list):
                 self.set_xy(self.l_margin + col_width, y_pos)
                 self.set_font("Amiri", "", 12)
@@ -341,7 +282,6 @@ class PDFReporter(FPDF):
         if not self.font_loaded: return
         self.add_section_divider("تحليل لوحة التحكم العامة")
         
-        # --- Page 1: KPIs and Champions ---
         self.add_page()
         self.set_font("Amiri", "", 24)
         self.cell(0, 15, self._process_text("مؤشرات الأداء الرئيسية"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -349,41 +289,116 @@ class PDFReporter(FPDF):
         self.add_kpi_row(data.get('kpis_secondary', {}))
         self.add_champions_section(data.get('champions_data', {}))
         
-        # --- Page 2: Growth Chart ---
         self.add_page()
+        self.add_plot(data.get('fig_growth'), title="نمو القراءة التراكمي", x_title="التاريخ", y_title="مجموع الساعات")
+
+        self.add_page()
+        self.add_plot(data.get('fig_donut'), title="تركيز القراءة", width_percent=70)
+        self.ln(10)
+        self.add_plot(data.get('fig_bar_days'), title="أيام النشاط", x_title="أيام الأسبوع", y_title="الساعات", width_percent=80)
+
+        self.add_page()
+        self.add_plot(data.get('fig_points_leaderboard'), title="المتصدرون بالنقاط", x_title="النقاط")
+        self.ln(10)
+        self.add_plot(data.get('fig_hours_leaderboard'), title="المتصدرون بالساعات", x_title="الساعات")
+
+    def add_challenge_title_page(self, title, author, period, duration):
+        """Adds a detailed title page for a specific challenge."""
+        if not self.font_loaded: return
+        self.add_page()
+        self.set_font("Amiri", "", 28)
+        self.set_text_color(0, 0, 0)
+        self.set_y(A4_HEIGHT / 4)
+        self.multi_cell(0, 15, self._process_text(f"تقرير تحدي:\n{title}"), align="C")
+        self.ln(15)
+        
+        self.set_font("Amiri", "", 16)
+        self.set_text_color(80, 80, 80)
+        self.cell(0, 10, self._process_text(f"تأليف: {author}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 10, self._process_text(f"الفترة: {period}"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 10, self._process_text(f"مدة التحدي: {duration} يوم"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    def add_participants_page(self, all_participants, finishers, attendees):
+        """Adds a page with lists of participants, finishers, and attendees in the correct order."""
+        if not self.font_loaded: return
+        self.add_page()
+        self.set_font("Amiri", "", 24)
+        self.cell(0, 15, self._process_text("المشاركون في التحدي"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(10)
+
+        page_w = self.w - self.l_margin - self.r_margin
+        col_w = page_w / 3
+        
+        # --- MODIFICATION: Reversed the drawing order of the cells ---
+        # Headers
+        self.set_font("Amiri", "", 14)
+        self.set_text_color(0,0,0)
+        self.cell(col_w, 10, self._process_text("من حضروا النقاش"), border='B', align="C")
+        self.cell(col_w, 10, self._process_text("من أنهوا الكتاب"), border='B', align="C")
+        self.cell(col_w, 10, self._process_text("جميع المشاركين"), border='B', align="C")
+        self.ln(15)
+        
+        # Content
+        self.set_font("Amiri", "", 11)
+        self.set_text_color(50,50,50)
+        
+        max_len = max(len(all_participants), len(finishers), len(attendees))
+        for i in range(max_len):
+            p_name = all_participants[i] if i < len(all_participants) else ""
+            f_name = finishers[i] if i < len(finishers) else ""
+            a_name = attendees[i] if i < len(attendees) else ""
+            
+            # --- MODIFICATION: Reversed the drawing order of the cells ---
+            self.cell(col_w, 8, self._process_text(a_name), align="C")
+            self.cell(col_w, 8, self._process_text(f_name), align="C")
+            self.cell(col_w, 8, self._process_text(p_name), align="C")
+            self.ln()
+
+    def add_challenge_report(self, data: dict):
+        """Adds the full challenge analytics report section based on the new structure."""
+        if not self.font_loaded: return
+        
+        self.add_challenge_title_page(
+            title=data.get('title', ''),
+            author=data.get('author', ''),
+            period=data.get('period', ''),
+            duration=data.get('duration', 0)
+        )
+        
+        self.add_participants_page(
+            all_participants=data.get('all_participants', []),
+            finishers=data.get('finishers', []),
+            attendees=data.get('attendees', [])
+        )
+        
+        self.add_page()
+        self.set_font("Amiri", "", 24)
+        self.cell(0, 15, self._process_text("ملخص الأداء"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.add_kpi_row(data.get('kpis', {}))
+        self.ln(5)
         self.add_plot(
-            data.get('fig_growth'), 
-            title="نمو القراءة التراكمي",
-            x_title="التاريخ",
+            data.get('fig_area'),
+            title="مجموع ساعات القراءة التراكمي",
+            x_title="تاريخ التحدي",
             y_title="مجموع الساعات"
         )
-
-        # --- Page 3: Donut and Bar Chart ---
+        
         self.add_page()
+        self.set_font("Amiri", "", 24)
+        self.cell(0, 15, self._process_text("لوحات الصدارة"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(5)
+        
         self.add_plot(
-            data.get('fig_donut'), 
-            title="تركيز القراءة",
-            width_percent=70
+            data.get('fig_hours'),
+            title="ساعات قراءة الأعضاء",
+            x_title="مجموع الساعات",
+            width_percent=85
         )
-        self.ln(10)
+        self.ln(15)
+        
         self.add_plot(
-            data.get('fig_bar_days'), 
-            title="أيام النشاط",
-            x_title="أيام الأسبوع",
-            y_title="الساعات",
-            width_percent=80
-        )
-
-        # --- Page 4: Leaderboard Charts ---
-        self.add_page()
-        self.add_plot(
-            data.get('fig_points_leaderboard'),
-            title="المتصدرون بالنقاط",
-            x_title="النقاط"
-        )
-        self.ln(10)
-        self.add_plot(
-            data.get('fig_hours_leaderboard'),
-            title="المتصدرون بالساعات",
-            x_title="الساعات"
+            data.get('fig_points'),
+            title="نقاط الأعضاء",
+            x_title="مجموع النقاط",
+            width_percent=85
         )
