@@ -965,7 +965,7 @@ elif page == "🎯 تحليلات التحديات":
                 if st.button("🚀 إنشاء وتصدير تقرير التحدي", key="export_challenge_pdf", use_container_width=True, type="primary"):
                     with st.spinner("جاري إنشاء تقرير التحدي..."):
                         pdf = PDFReporter()
-                        pdf.add_cover_page()
+                        # pdf.add_cover_page()
                         
                         challenge_duration = (end_date_obj - start_date_obj).days
                         challenge_period_str = f"{start_date_obj.strftime('%Y-%m-%d')} إلى {end_date_obj.strftime('%Y-%m-%d')}"
