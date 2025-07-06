@@ -62,6 +62,7 @@ def generate_date_options():
 
 # --- MODIFIED: Helper function to create Activity Heatmap with RTL support ---
 def create_activity_heatmap(df, start_date, end_date, title_text=''):
+    df = df.copy()
     if df.empty:
         return go.Figure().update_layout(title="لا توجد بيانات قراءة لعرضها في الخريطة")
 
@@ -71,14 +72,15 @@ def create_activity_heatmap(df, start_date, end_date, title_text=''):
     
     daily_minutes = df.groupby(df['date'].dt.date)['total_minutes'].sum()
     
+    
     heatmap_data = pd.DataFrame({'date': daily_minutes.index, 'minutes': daily_minutes.values})
     heatmap_data['date'] = pd.to_datetime(heatmap_data['date'])
     
     heatmap_data = pd.merge(pd.DataFrame({'date': full_date_range}), heatmap_data, on='date', how='left').fillna(0)
 
-    heatmap_data['weekday_name'] = heatmap_data['date'].dt.strftime('%A')
+    heatmap_data.loc[:, 'weekday_name'] = heatmap_data['date'].dt.strftime('%A')
     weekday_map_ar = {"Saturday": "السبت", "Sunday": "الأحد", "Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"}
-    heatmap_data['weekday_ar'] = heatmap_data['weekday_name'].map(weekday_map_ar)
+    heatmap_data.loc[:, 'weekday_ar'] = heatmap_data['weekday_name'].map(weekday_map_ar)
     
     heatmap_data['week_of_year'] = heatmap_data['date'].dt.isocalendar().week
     heatmap_data['month_abbr'] = heatmap_data['date'].dt.strftime('%b')
@@ -87,8 +89,8 @@ def create_activity_heatmap(df, start_date, end_date, title_text=''):
     weekday_order_ar = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
     heatmap_data['weekday_ar'] = pd.Categorical(heatmap_data['weekday_ar'], categories=weekday_order_ar, ordered=True)
     
-    heatmap_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='minutes', aggfunc='sum').fillna(0)
-    hover_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='hover_text', aggfunc=lambda x: ' '.join(x))
+    heatmap_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='minutes', aggfunc='sum', observed=False).fillna(0)
+    hover_pivot = heatmap_data.pivot_table(index='weekday_ar', columns='week_of_year', values='hover_text', aggfunc=lambda x: ' '.join(x), observed=False)
     
     heatmap_pivot = heatmap_pivot[sorted(heatmap_pivot.columns, reverse=True)]
     hover_pivot = hover_pivot[sorted(hover_pivot.columns, reverse=True)]
@@ -506,21 +508,8 @@ if page == "📈 لوحة التحكم العامة":
         st.markdown("<div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; text-align: center; font-size: 1.1em; color: #1c2833;'>انطلق الماراثون! أهلاً بكم</div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    col1, col2 = st.columns([1, 1.5], gap="large")
+    col1, col2 = st.columns([1.5, 1], gap="large")
     with col1:
-        st.subheader("🏆 أبطال الماراثون")
-        if king_of_reading is not None:
-            sub_col1, sub_col2 = st.columns(2)
-            with sub_col1:
-                st.metric(label="👑 ملك القراءة", value=king_of_reading['name'])
-                st.metric(label="⭐ ملك النقاط", value=king_of_points['name'])
-            with sub_col2:
-                st.metric(label="📚 ملك الكتب", value=king_of_books['name'])
-                st.metric(label="✍️ ملك الاقتباسات", value=king_of_quotes['name'])
-        else:
-            st.info("لا أبطال بعد.")
-
-    with col2:
         st.subheader("📊 مؤشرات الأداء الرئيسية")
         kpis_main = {
             "⏳ إجمالي ساعات القراءة": f"{total_hours:,}",
@@ -539,6 +528,19 @@ if page == "📈 لوحة التحكم العامة":
         kpi4, kpi5, kpi6 = st.columns(3)
         for col, (label, value) in zip([kpi4, kpi5, kpi6], kpis_secondary.items()):
             col.metric(label=label, value=value)
+    
+    with col2:
+        st.subheader("🏆 أبطال الماراثون")
+        if king_of_reading is not None:
+            sub_col1, sub_col2 = st.columns(2)
+            with sub_col1:
+                st.metric(label="👑 ملك القراءة", value=king_of_reading['name'])
+                st.metric(label="⭐ ملك النقاط", value=king_of_points['name'])
+            with sub_col2:
+                st.metric(label="📚 ملك الكتب", value=king_of_books['name'])
+                st.metric(label="✍️ ملك الاقتباسات", value=king_of_quotes['name'])
+        else:
+            st.info("لا أبطال بعد.")
 
     st.markdown("---")
     
@@ -581,7 +583,7 @@ if page == "📈 لوحة التحكم العامة":
             weekday_map_ar = {"Saturday": "السبت", "Sunday": "الأحد", "Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"}
             weekday_order_ar = ["الجمعة", "الخميس", "الأربعاء", "الثلاثاء", "الاثنين", "الأحد", "السبت"]
             logs_df['weekday_ar'] = logs_df['weekday_name'].map(weekday_map_ar)
-            daily_activity_hours = (logs_df.groupby('weekday_ar')['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
+            daily_activity_hours = (logs_df.groupby('weekday_ar', observed=False)['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
             
             # إنشاء المخطط بدون استخدام labels
             fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, 
