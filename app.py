@@ -552,7 +552,7 @@ if page == "📈 لوحة التحكم العامة":
             daily_minutes['cumulative_hours'] = daily_minutes['minutes'].cumsum() / 60
             fig_growth = px.area(daily_minutes, x='submission_date_dt', y='cumulative_hours', 
                                  labels={'submission_date_dt': 'التاريخ', 'cumulative_hours': 'مجموع الساعات'},
-                                 markers=False)
+                                 markers=False, color_discrete_sequence=['#2980b9'])
             fig_growth.update_layout(title='', margin=dict(t=20, b=0, l=0, r=0), xaxis_autorange='reversed', yaxis={'side': 'right'})
             st.plotly_chart(fig_growth, use_container_width=True)
         else:
@@ -566,7 +566,8 @@ if page == "📈 لوحة التحكم العامة":
             if total_common_minutes > 0 or total_other_minutes > 0:
                 donut_labels = ['الكتاب المشترك', 'الكتب الأخرى']
                 donut_values = [total_common_minutes, total_other_minutes]
-                fig_donut = go.Figure(data=[go.Pie(labels=donut_labels, values=donut_values, hole=.5)])
+                colors = ['#3498db', '#f1c40f']
+                fig_donut = go.Figure(data=[go.Pie(labels=donut_labels, values=donut_values, hole=.5, marker_colors=colors)])
                 fig_donut.update_layout(showlegend=True, legend=dict(x=0.5, y=-0.1, xanchor='center', orientation='h'), margin=dict(t=20, b=20, l=20, r=20), annotations=[dict(text='التوزيع', x=0.5, y=0.5, font_size=14, showarrow=False)])
                 st.plotly_chart(fig_donut, use_container_width=True)
             else:
@@ -581,7 +582,8 @@ if page == "📈 لوحة التحكم العامة":
             weekday_order_ar = ["ج", "خ", "ر", "ث", "ن", "ح", "س"]
             logs_df['weekday_ar'] = logs_df['weekday_name'].map(weekday_map_ar)
             daily_activity_hours = (logs_df.groupby('weekday_ar')['total_minutes'].sum() / 60).reindex(weekday_order_ar).fillna(0)
-            fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, labels={'x': '', 'y': 'الساعات'})
+            fig_bar_days = px.bar(daily_activity_hours, x=daily_activity_hours.index, y=daily_activity_hours.values, 
+                                  labels={'x': '', 'y': 'الساعات'}, color_discrete_sequence=['#1abc9c'])
             fig_bar_days.update_layout(margin=dict(t=20, b=0, l=0, r=0), title='', yaxis={'side': 'right'})
             st.plotly_chart(fig_bar_days, use_container_width=True)
         else:
@@ -594,7 +596,8 @@ if page == "📈 لوحة التحكم العامة":
         st.subheader("⭐ المتصدرون بالنقاط")
         if not member_stats_df.empty:
             points_leaderboard_df = member_stats_df.sort_values('total_points', ascending=False).head(10)[['name', 'total_points']].rename(columns={'name': 'الاسم', 'total_points': 'النقاط'})
-            fig_points_leaderboard = px.bar(points_leaderboard_df, x='النقاط', y='الاسم', orientation='h', text='النقاط')
+            fig_points_leaderboard = px.bar(points_leaderboard_df, x='النقاط', y='الاسم', orientation='h', 
+                                            text='النقاط', color_discrete_sequence=['#9b59b6'])
             fig_points_leaderboard.update_traces(textposition='outside')
             fig_points_leaderboard.update_layout(title='', yaxis={'side': 'right', 'autorange': 'reversed'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_points_leaderboard, use_container_width=True)
@@ -606,7 +609,8 @@ if page == "📈 لوحة التحكم العامة":
             member_stats_df['total_hours'] = member_stats_df['total_reading_minutes'] / 60
             hours_leaderboard_df = member_stats_df.sort_values('total_hours', ascending=False).head(10)[['name', 'total_hours']].rename(columns={'name': 'الاسم', 'total_hours': 'الساعات'})
             hours_leaderboard_df['الساعات'] = hours_leaderboard_df['الساعات'].round(1)
-            fig_hours_leaderboard = px.bar(hours_leaderboard_df, x='الساعات', y='الاسم', orientation='h', text='الساعات')
+            fig_hours_leaderboard = px.bar(hours_leaderboard_df, x='الساعات', y='الاسم', orientation='h', 
+                                           text='الساعات', color_discrete_sequence=['#e67e22'])
             fig_hours_leaderboard.update_traces(texttemplate='%{text:.1f}', textposition='outside')
             fig_hours_leaderboard.update_layout(title='', yaxis={'side': 'right', 'autorange': 'reversed'}, xaxis_autorange='reversed', margin=dict(t=20, b=0, l=0, r=0))
             st.plotly_chart(fig_hours_leaderboard, use_container_width=True)
