@@ -632,42 +632,29 @@ if page == "📈 لوحة التحكم العامة":
     with st.expander("🖨️ تصدير تقرير الأداء (PDF)"):
         st.info("اختر المحتوى الذي تريد تضمينه في التقرير، ثم اضغط على زر الإنشاء.")
         
-        report_options = {
-            "تصدير لوحة التحكم العامة فقط": "dashboard_only",
-            "تصدير معلومات التحدي الحالي فقط": "current_challenge_only",
-            "تصدير لوحة التحكم العامة + التحدي الحالي": "dashboard_and_current",
-            "تصدير لوحة التحكم العامة + جميع التحديات": "dashboard_and_all_challenges",
-            "تصدير كل شيء (عام + كل التحديات + كل القراء)": "all_inclusive"
-        }
+        # --- NEW: Checkbox options ---
+        export_dashboard = st.checkbox("لوحة التحكم العامة", value=True)
+        export_challenges = st.checkbox("تحليلات التحديات")
+        export_members = st.checkbox("بطاقات الأعضاء")
         
-        selected_report = st.selectbox("اختر نوع التقرير:", options=list(report_options.keys()))
-
+        # --- NEW: Logic for button press ---
         if st.button("🚀 إنشاء وتصدير التقرير", use_container_width=True, type="primary"):
-            report_key = report_options[selected_report]
-            with st.spinner("جاري إنشاء التقرير... قد تستغرق العملية بعض الوقت."):
-                pdf = PDFReporter()
-                pdf.add_cover_page()
-                
-                # Build Table of Contents
-                toc = []
-                if "dashboard" in report_key:
-                    toc.append("تحليل لوحة التحكم العامة")
-                # Add other sections to TOC based on selection (to be implemented later)
-                
-                pdf.add_table_of_contents(toc)
+            # Case 1: Only General Dashboard is selected
+            if export_dashboard and not export_challenges and not export_members:
+                with st.spinner("جاري إنشاء تقرير لوحة التحكم العامة..."):
+                    pdf = PDFReporter()
+                    pdf.add_cover_page()
+                    
+                    # Build Table of Contents
+                    toc = ["تحليل لوحة التحكم العامة"]
+                    pdf.add_table_of_contents(toc)
 
-                # Add content based on selection
-                if "dashboard" in report_key:
                     # Prepare the champions data dictionary
                     champions_data = {}
-                    if king_of_reading is not None:
-                        champions_data["👑 ملك القراءة"] = king_of_reading['name']
-                    if king_of_points is not None:
-                        champions_data["⭐ ملك النقاط"] = king_of_points['name']
-                    if king_of_books is not None:
-                        champions_data["📚 ملك الكتب"] = king_of_books['name']
-                    if king_of_quotes is not None:
-                        champions_data["✍️ ملك الاقتباسات"] = king_of_quotes['name']
+                    if king_of_reading is not None: champions_data["👑 ملك القراءة"] = king_of_reading['name']
+                    if king_of_points is not None: champions_data["⭐ ملك النقاط"] = king_of_points['name']
+                    if king_of_books is not None: champions_data["📚 ملك الكتب"] = king_of_books['name']
+                    if king_of_quotes is not None: champions_data["✍️ ملك الاقتباسات"] = king_of_quotes['name']
 
                     # Prepare the final data dictionary for the reporter
                     dashboard_data = {
@@ -682,13 +669,17 @@ if page == "📈 لوحة التحكم العامة":
                     }
                     pdf.add_dashboard_report(dashboard_data)
 
-                # --- Placeholder for other report sections ---
-                # if "challenge" in report_key: ...
-                # if "readers" in report_key: ...
+                    pdf_output = bytes(pdf.output())
+                    st.session_state.pdf_file = pdf_output
+                    st.rerun()
 
-                pdf_output = bytes(pdf.output())
-                st.session_state.pdf_file = pdf_output
-                st.rerun()
+            # Case 2: No option selected
+            elif not export_dashboard and not export_challenges and not export_members:
+                st.warning("يرجى اختيار محتوى واحد على الأقل لتضمينه في التقرير.")
+
+            # Case 3: Other options are selected
+            else:
+                st.info("🚧 هذه الميزة قيد التطوير حاليًا... ترقب التحديثات القادمة!")
 
         if 'pdf_file' in st.session_state:
             pdf_file = st.session_state.pdf_file
