@@ -630,63 +630,42 @@ if page == "📈 لوحة التحكم العامة":
     # --- NEW SECTION: PDF EXPORT ---
     st.markdown("---")
     with st.expander("🖨️ تصدير تقرير الأداء (PDF)"):
-        st.info("اختر المحتوى الذي تريد تضمينه في التقرير، ثم اضغط على زر الإنشاء.")
+        st.info("اضغط على الزر أدناه لتصدير تقرير شامل للوحة التحكم العامة.")
         
-        # --- NEW: Checkbox options ---
-        export_dashboard = st.checkbox("لوحة التحكم العامة", value=True)
-        export_challenges = st.checkbox("تحليلات التحديات")
-        export_members = st.checkbox("بطاقات الأعضاء")
-        
-        # --- NEW: Logic for button press ---
-        if st.button("🚀 إنشاء وتصدير التقرير", use_container_width=True, type="primary"):
-            # Case 1: Only General Dashboard is selected
-            if export_dashboard and not export_challenges and not export_members:
-                with st.spinner("جاري إنشاء تقرير لوحة التحكم العامة..."):
-                    pdf = PDFReporter()
-                    pdf.add_cover_page()
-                    
-                    # Build Table of Contents
-                    toc = ["تحليل لوحة التحكم العامة"]
-                    pdf.add_table_of_contents(toc)
+        if st.button("🚀 إنشاء وتصدير تقرير لوحة التحكم", use_container_width=True, type="primary"):
+            with st.spinner("جاري إنشاء التقرير..."):
+                pdf = PDFReporter()
+                pdf.add_cover_page()
+                pdf.add_table_of_contents(["تحليل لوحة التحكم العامة"])
 
-                    # Prepare the champions data dictionary
-                    champions_data = {}
-                    if king_of_reading is not None: champions_data["👑 ملك القراءة"] = king_of_reading['name']
-                    if king_of_points is not None: champions_data["⭐ ملك النقاط"] = king_of_points['name']
-                    if king_of_books is not None: champions_data["📚 ملك الكتب"] = king_of_books['name']
-                    if king_of_quotes is not None: champions_data["✍️ ملك الاقتباسات"] = king_of_quotes['name']
+                champions_data = {}
+                if king_of_reading is not None: champions_data["👑 ملك القراءة"] = king_of_reading['name']
+                if king_of_points is not None: champions_data["⭐ ملك النقاط"] = king_of_points['name']
+                if king_of_books is not None: champions_data["📚 ملك الكتب"] = king_of_books['name']
+                if king_of_quotes is not None: champions_data["✍️ ملك الاقتباسات"] = king_of_quotes['name']
+                
+                dashboard_data = {
+                    "kpis_main": kpis_main,
+                    "kpis_secondary": kpis_secondary,
+                    "champions_data": champions_data,
+                    "fig_growth": fig_growth,
+                    "fig_donut": fig_donut,
+                    "fig_bar_days": fig_bar_days,
+                    "fig_points_leaderboard": fig_points_leaderboard,
+                    "fig_hours_leaderboard": fig_hours_leaderboard
+                }
+                pdf.add_dashboard_report(dashboard_data)
 
-                    # Prepare the final data dictionary for the reporter
-                    dashboard_data = {
-                        "kpis_main": kpis_main,
-                        "kpis_secondary": kpis_secondary,
-                        "champions_data": champions_data,
-                        "fig_growth": fig_growth,
-                        "fig_donut": fig_donut,
-                        "fig_bar_days": fig_bar_days,
-                        "fig_points_leaderboard": fig_points_leaderboard,
-                        "fig_hours_leaderboard": fig_hours_leaderboard
-                    }
-                    pdf.add_dashboard_report(dashboard_data)
-
-                    pdf_output = bytes(pdf.output())
-                    st.session_state.pdf_file = pdf_output
-                    st.rerun()
-
-            # Case 2: No option selected
-            elif not export_dashboard and not export_challenges and not export_members:
-                st.warning("يرجى اختيار محتوى واحد على الأقل لتضمينه في التقرير.")
-
-            # Case 3: Other options are selected
-            else:
-                st.info("🚧 هذه الميزة قيد التطوير حاليًا... ترقب التحديثات القادمة!")
+                pdf_output = bytes(pdf.output())
+                st.session_state.pdf_file = pdf_output
+                st.rerun()
 
         if 'pdf_file' in st.session_state:
             pdf_file = st.session_state.pdf_file
             st.download_button(
                 label="📥 تحميل التقرير الآن",
                 data=pdf_file,
-                file_name=f"ReadingMarathon_Report_{date.today()}.pdf",
+                file_name=f"ReadingMarathon_Report_Dashboard_{date.today()}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
@@ -758,9 +737,12 @@ elif page == "🎯 تحليلات التحديات":
             period_achievements_df = achievements_df[achievements_df['period_id'] == selected_period_id].copy()
 
         podium_df = pd.DataFrame()
+        all_participants_names = []
         if not period_logs_df.empty:
             period_participants_ids = period_logs_df['member_id'].unique()
             period_members_df = members_df[members_df['member_id'].isin(period_participants_ids)]
+            all_participants_names = period_members_df['name'].tolist()
+
             podium_data = []
             period_rules = selected_challenge_data
 
@@ -798,6 +780,12 @@ elif page == "🎯 تحليلات التحديات":
                 podium_data.append({'member_id': member_id, 'name': member['name'], 'points': int(points), 'hours': total_hours, 'quotes': int(total_quotes)})
             podium_df = pd.DataFrame(podium_data)
 
+        # --- Variables for PDF Report ---
+        fig_gauge, fig_area, heatmap_fig, fig_hours, fig_points = None, None, None, None, None
+        total_period_hours, active_participants, total_period_quotes, avg_daily_reading = 0, 0, 0, 0
+        finishers_names, attendees_names = [], []
+
+        # --- UI Tabs ---
         tab1, tab2 = st.tabs(["📝 ملخص التحدي", "🧑‍💻 بطاقة القارئ"])
 
         with tab1:
@@ -815,11 +803,9 @@ elif page == "🎯 تحليلات التحديات":
                     progress = min(1.0, days_passed / total_days if total_days > 0 else 0) * 100
                     
                     fig_gauge = go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=progress,
+                        mode="gauge+number", value=progress,
                         title={'text': f"انقضى {days_passed} من {total_days} يوم"},
-                        gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#2980b9"}}
-                    ))
+                        gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#2980b9"}}))
                     fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
                     st.plotly_chart(fig_gauge, use_container_width=True)
 
@@ -844,7 +830,7 @@ elif page == "🎯 تحليلات التحديات":
                     st.subheader("مجموع ساعات القراءة التراكمي")
                     daily_cumulative_minutes = period_logs_df.groupby('submission_date_dt')['total_minutes'].sum().cumsum().reset_index()
                     daily_cumulative_minutes['total_hours'] = daily_cumulative_minutes['total_minutes'] / 60
-                    fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_hours', title='', labels={'submission_date_dt': 'تاريخ التحدي', 'total_hours': 'مجموع الساعات'})
+                    fig_area = px.area(daily_cumulative_minutes, x='submission_date_dt', y='total_hours', title='', labels={'submission_date_dt': 'تاريخ التحدي', 'total_hours': 'مجموع الساعات'}, color_discrete_sequence=['#2ecc71'])
                     fig_area.update_layout(xaxis_autorange='reversed', yaxis={'side': 'right'})
                     st.plotly_chart(fig_area, use_container_width=True)
 
@@ -858,19 +844,18 @@ elif page == "🎯 تحليلات التحديات":
                 with col5:
                     st.subheader("ساعات قراءة الأعضاء")
                     hours_chart_df = podium_df.sort_values('hours', ascending=True).tail(10)
-                    fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع الساعات', 'name': ''}, text='hours')
+                    fig_hours = px.bar(hours_chart_df, x='hours', y='name', orientation='h', title="", labels={'hours': 'مجموع الساعات', 'name': ''}, text='hours', color_discrete_sequence=['#e67e22'])
                     fig_hours.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-                    fig_hours.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed') # <-- REVERSED AXIS
+                    fig_hours.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed')
                     st.plotly_chart(fig_hours, use_container_width=True)
 
                 with col6:
                     st.subheader("نقاط الأعضاء")
                     points_chart_df = podium_df.sort_values('points', ascending=True).tail(10)
-                    fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', title="", labels={'points': 'مجموع النقاط', 'name': ''}, text='points')
+                    fig_points = px.bar(points_chart_df, x='points', y='name', orientation='h', title="", labels={'points': 'مجموع النقاط', 'name': ''}, text='points', color_discrete_sequence=['#9b59b6'])
                     fig_points.update_traces(textposition='outside')
-                    fig_points.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed') # <-- REVERSED AXIS
+                    fig_points.update_layout(yaxis={'side': 'right'}, xaxis_autorange='reversed')
                     st.plotly_chart(fig_points, use_container_width=True)
-
 
         with tab2: # --- بطاقة القارئ ---
             if podium_df.empty:
@@ -910,8 +895,7 @@ elif page == "🎯 تحليلات التحديات":
                             if len(log_dates) >= 7:
                                 max_streak, current_streak = 0, 0
                                 if log_dates:
-                                    current_streak = 1
-                                    max_streak = 1
+                                    current_streak = 1; max_streak = 1
                                     for i in range(1, len(log_dates)):
                                         if (log_dates[i] - log_dates[i-1]).days == 1: current_streak += 1
                                         else: max_streak = max(max_streak, current_streak); current_streak = 1
@@ -920,70 +904,106 @@ elif page == "🎯 تحليلات التحديات":
                         
                         if badges_unlocked:
                             for badge in badges_unlocked: st.success(badge)
-                        else:
-                            st.info("لا توجد أوسمة بعد.")
+                        else: st.info("لا توجد أوسمة بعد.")
 
                     with col2:
                         st.subheader("🎯 الإنجازات")
                         if not member_achievements.empty:
                             achievement_map = {'FINISHED_COMMON_BOOK': 'إنهاء الكتاب المشترك', 'ATTENDED_DISCUSSION': 'حضور جلسة النقاش', 'FINISHED_OTHER_BOOK': 'إنهاء كتاب آخر'}
-                            for _, ach in member_achievements.iterrows():
-                                st.markdown(f"- **{achievement_map.get(ach['achievement_type'], ach['achievement_type'])}**")
-                        else:
-                            st.info("لا توجد إنجازات بعد.")
+                            for _, ach in member_achievements.iterrows(): st.markdown(f"- **{achievement_map.get(ach['achievement_type'], ach['achievement_type'])}**")
+                        else: st.info("لا توجد إنجازات بعد.")
 
                     st.markdown("---")
-                    
                     col4, col5 = st.columns(2, gap="large")
-
                     with col4:
                         st.subheader(f"خريطة التزام: {selected_member_name}")
                         individual_heatmap = create_activity_heatmap(member_logs, start_date_obj, end_date_obj, title_text="")
                         st.plotly_chart(individual_heatmap, use_container_width=True, key="individual_heatmap")
-
                     with col5:
                         st.subheader("مصادر النقاط")
                         period_rules = selected_challenge_data
                         points_source = {}
-
                         common_minutes = member_logs['common_book_minutes'].sum()
                         other_minutes = member_logs['other_book_minutes'].sum()
-                        if period_rules.get('minutes_per_point_common', 0) > 0:
-                            points_source['قراءة الكتاب المشترك'] = (common_minutes // period_rules['minutes_per_point_common'])
-                        if period_rules.get('minutes_per_point_other', 0) > 0:
-                            points_source['قراءة كتب أخرى'] = (other_minutes // period_rules['minutes_per_point_other'])
-                        
+                        if period_rules.get('minutes_per_point_common', 0) > 0: points_source['قراءة الكتاب المشترك'] = (common_minutes // period_rules['minutes_per_point_common'])
+                        if period_rules.get('minutes_per_point_other', 0) > 0: points_source['قراءة كتب أخرى'] = (other_minutes // period_rules['minutes_per_point_other'])
                         common_quotes = member_logs['submitted_common_quote'].sum()
                         other_quotes = member_logs['submitted_other_quote'].sum()
                         points_source['اقتباسات (الكتاب المشترك)'] = common_quotes * period_rules.get('quote_common_book_points', 0)
                         points_source['اقتباسات (كتب أخرى)'] = other_quotes * period_rules.get('quote_other_book_points', 0)
-                        
                         if not member_achievements.empty:
                             for _, ach in member_achievements.iterrows():
                                 ach_type = ach['achievement_type']
-                                if ach_type == 'FINISHED_COMMON_BOOK':
-                                    points_source['إنهاء الكتاب المشترك'] = points_source.get('إنهاء الكتاب المشترك', 0) + period_rules.get('finish_common_book_points', 0)
-                                elif ach_type == 'ATTENDED_DISCUSSION':
-                                    points_source['حضور النقاش'] = points_source.get('حضور النقاش', 0) + period_rules.get('attend_discussion_points', 0)
-                                elif ach_type == 'FINISHED_OTHER_BOOK':
-                                    points_source['إنهاء كتب أخرى'] = points_source.get('إنهاء كتب أخرى', 0) + period_rules.get('finish_other_book_points', 0)
-                        
+                                if ach_type == 'FINISHED_COMMON_BOOK': points_source['إنهاء الكتاب المشترك'] = points_source.get('إنهاء الكتاب المشترك', 0) + period_rules.get('finish_common_book_points', 0)
+                                elif ach_type == 'ATTENDED_DISCUSSION': points_source['حضور النقاش'] = points_source.get('حضور النقاش', 0) + period_rules.get('attend_discussion_points', 0)
+                                elif ach_type == 'FINISHED_OTHER_BOOK': points_source['إنهاء كتب أخرى'] = points_source.get('إنهاء كتب أخرى', 0) + period_rules.get('finish_other_book_points', 0)
                         points_source_filtered = {k: v for k, v in points_source.items() if v > 0}
                         if points_source_filtered:
-                            fig_donut = go.Figure(data=[go.Pie(
-                                labels=list(points_source_filtered.keys()), 
-                                values=list(points_source_filtered.values()), 
-                                hole=.5,
-                                textinfo='label+percent',
-                                insidetextorientation='radial'
-                            )])
+                            fig_donut = go.Figure(data=[go.Pie(labels=list(points_source_filtered.keys()), values=list(points_source_filtered.values()), hole=.5, textinfo='label+percent', insidetextorientation='radial')])
                             fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
                             st.plotly_chart(fig_donut, use_container_width=True)
-                        else:
-                            st.info("لا توجد نقاط مسجلة لعرض مصادرها.")
+                        else: st.info("لا توجد نقاط مسجلة لعرض مصادرها.")
+        
+        # --- PDF EXPORT SECTION FOR CHALLENGE ---
+        st.markdown("---")
+        with st.expander("🖨️ تصدير تقرير أداء التحدي (PDF)"):
+            if period_logs_df.empty:
+                st.warning("لا يمكن تصدير تقرير لتحدي لا يحتوي على أي سجلات.")
+            else:
+                if st.button("🚀 إنشاء وتصدير تقرير التحدي", key="export_challenge_pdf", use_container_width=True, type="primary"):
+                    with st.spinner("جاري إنشاء تقرير التحدي..."):
+                        pdf = PDFReporter()
+                        pdf.add_cover_page()
+                        
+                        challenge_duration = (end_date_obj - start_date_obj).days
+                        challenge_period_str = f"{start_date_obj.strftime('%Y-%m-%d')} إلى {end_date_obj.strftime('%Y-%m-%d')}"
+                        
+                        if not period_achievements_df.empty:
+                            finisher_ids = period_achievements_df[period_achievements_df['achievement_type'] == 'FINISHED_COMMON_BOOK']['member_id'].unique()
+                            attendee_ids = period_achievements_df[period_achievements_df['achievement_type'] == 'ATTENDED_DISCUSSION']['member_id'].unique()
+                            finishers_names = members_df[members_df['member_id'].isin(finisher_ids)]['name'].tolist()
+                            attendees_names = members_df[members_df['member_id'].isin(attendee_ids)]['name'].tolist()
+                        
+                        challenge_kpis = {
+                            "⏳ مجموع ساعات القراءة": f"{total_period_hours:,}",
+                            "👥 المشاركون الفعليون": f"{active_participants}",
+                            "✍️ الاقتباسات المرسلة": f"{total_period_quotes}",
+                            "📊 متوسط القراءة اليومي/عضو": f"{avg_daily_reading:.1f} د"
+                        }
 
-    else:
-        st.info("يرجى اختيار تحدي من القائمة أعلاه.")
+                        challenge_data_for_pdf = {
+                            "title": selected_challenge_data.get('title', ''),
+                            "author": selected_challenge_data.get('author', ''),
+                            "period": challenge_period_str,
+                            "duration": challenge_duration,
+                            "all_participants": all_participants_names,
+                            "finishers": finishers_names,
+                            "attendees": attendees_names,
+                            "kpis": challenge_kpis,
+                            "fig_area": fig_area,
+                            "fig_hours": fig_hours,
+                            "fig_points": fig_points
+                        }
+                        
+                        pdf.add_challenge_report(challenge_data_for_pdf)
+                        
+                        pdf_output = bytes(pdf.output())
+                        st.session_state.pdf_file_challenge = pdf_output
+                        st.rerun()
+
+                if 'pdf_file_challenge' in st.session_state:
+                    pdf_file_challenge = st.session_state.pdf_file_challenge
+                    st.download_button(
+                        label="📥 تحميل تقرير التحدي الآن",
+                        data=pdf_file_challenge,
+                        file_name=f"ReadingMarathon_Report_Challenge_{date.today()}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                    if st.button("إغلاق", key="close_challenge_pdf"):
+                        del st.session_state.pdf_file_challenge
+                        st.rerun()
+
 
 
 elif page == "⚙️ الإدارة والإعدادات":
