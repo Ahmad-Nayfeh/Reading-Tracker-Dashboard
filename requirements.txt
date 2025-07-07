@@ -11,3 +11,6 @@ Pillow
 kaleido
 arabic-reshaper
 python-bidi
+google-cloud-firestore
+firebase-admin
+
