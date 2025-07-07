@@ -1,9 +1,9 @@
 # 🏃‍♂️ ماراثون القراءة (النسخة المحلية - SQLite)
 
+<div dir="rtl">
+
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python)](https://www.python.org/)
-
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.25%2B-red?logo=streamlit)](https.streamlit.io/)
-
 [![SQLite](https://img.shields.io/badge/Database-SQLite-blue.svg)](https://www.sqlite.org/)
 
 -----
