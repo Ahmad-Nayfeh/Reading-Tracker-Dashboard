@@ -2,4 +2,3 @@ __pycache__/
 venv/
 data/
 client_secret.json
-firebase_service_account.json
