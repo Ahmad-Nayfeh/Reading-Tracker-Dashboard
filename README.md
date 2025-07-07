@@ -23,7 +23,6 @@
 
 لوحة تحكم تفاعلية مصممة لتتبع تحديات القراءة لمجموعة من المستخدمين. يقوم التطبيق بسحب بيانات القراءة المسجلة عبر Google Forms، ومن ثم يعالجها ويحللها لعرض إحصائيات غنية ورسوم بيانية جذابة، بالإضافة إلى إنشاء تقارير PDF مخصصة باللغة العربية.
 
-https://github.com/user-attachments/assets/b42ff7b5-2ed7-466d-974a-254e4c23c727
 
 
 ## ✨ الميزات الرئيسية
@@ -55,7 +54,7 @@ https://github.com/user-attachments/assets/b42ff7b5-2ed7-466d-974a-254e4c23c727
 
 افتح الطرفية (Terminal) وقم بنسخ المستودع إلى جهازك باستخدام الأمر التالي:
 ```bash
-git clone [https://github.com/Ahmad-Nayfeh/Reading-Tracker-Dashboard.git](https://github.com/Ahmad-Nayfeh/Reading-Tracker-Dashboard.git)
+git clone https://github.com/Ahmad-Nayfeh/Reading-Tracker-Dashboard.git
 cd Reading-Tracker-Dashboard
 ```
 
